@@ -27,11 +27,13 @@
 #define DT 0.2
 #define V_SAMPLES 20
 #define OMEGA_SAMPLES 40
-#define PREDICT_TIME 1.2
-#define HEADING_GAIN 0.5
+#define PREDICT_TIME 2.0
+#define HEADING_GAIN 0.3
 #define CLEARANCE_GAIN 0.25
-#define VEL_GAIN 0.25
+#define VEL_GAIN 0.2
 #define OBSTACLE_MARGIN 0.15
+#define SMOOTH_GAIN 0.15
+#define OMEGA_SMOOTH_MAX 0.1
 #define SQRT2_MINUS_1 0.41421356237
 
 #define MAX_PATH_STEPS 10000
@@ -803,31 +805,34 @@ double evaluate_trajectory(double v, double omega, double robot_x, double robot_
     double vel_cost = 1.0 - (v / MAX_SPEED);
     double clearance_cost = 1.0 - (clearance / LIDAR_MAX_RANGE);
 
-    // Distance to goal cost — reward trajectories that end closer to the target
     double end_dist = hypot(goal_x - x, goal_y - y);
-    double dist_cost = end_dist / 3.0; // normalize by reasonable range
+    double dist_cost = end_dist / 3.0;
 
-    // Dynamic weight adjustment based on proximity to table target
-    double w_heading = HEADING_GAIN;    // 0.5
-    double w_clearance = CLEARANCE_GAIN; // 0.25
-    double w_vel = VEL_GAIN;            // 0.25
-    double w_dist = 0.0;
+    // Smoothness cost — penalize large omega changes from current
+    double smooth_cost = fabs(omega - current_omega) / (2.0 * MAX_OMEGA);
+
+    double w_heading = HEADING_GAIN;      // 0.3
+    double w_clearance = CLEARANCE_GAIN;  // 0.25
+    double w_vel = VEL_GAIN;              // 0.2
+    double w_dist = 0.25;
+    double w_smooth = SMOOTH_GAIN;        // 0.15
 
     if (near_table && dist_to_final_goal < 1.0) {
-        // Near table: prioritize reaching the goal over obstacle avoidance
-        w_heading = 0.8;
+        w_heading = 0.6;
         w_clearance = 0.05;
         w_vel = 0.05;
         w_dist = 0.6;
+        w_smooth = 0.05;
     } else if (near_table && dist_to_final_goal < 2.0) {
-        w_heading = 0.6;
+        w_heading = 0.4;
         w_clearance = 0.15;
         w_vel = 0.15;
         w_dist = 0.3;
+        w_smooth = 0.10;
     }
 
     return w_heading * heading_cost + w_clearance * clearance_cost
-         + w_vel * vel_cost + w_dist * dist_cost;
+         + w_vel * vel_cost + w_dist * dist_cost + w_smooth * smooth_cost;
 }
 
 void dwa_control(double robot_x, double robot_y, double robot_theta,
@@ -864,7 +869,6 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
     }
 
     if (best_cost == INFINITY || best_cost > 1000) {
-        // Check if dynamic obstacles are blocking the forward direction
         double check_dist = 0.3;
         double fx = robot_x + check_dist * cos(robot_theta);
         double fy = robot_y + check_dist * sin(robot_theta);
@@ -884,9 +888,16 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
             double err = target_th - robot_theta;
             while (err > M_PI) err -= 2 * M_PI;
             while (err < -M_PI) err += 2 * M_PI;
-            best_omega = (err > 0) ? 0.5 : -0.5;
+            // Proportional steering instead of bang-bang ±0.5
+            best_omega = fmax(-MAX_OMEGA, fmin(MAX_OMEGA, err * 1.5));
         }
     }
+
+    // Post-filter: clamp omega change to OMEGA_SMOOTH_MAX per step
+    double omega_delta = best_omega - current_omega;
+    if (omega_delta > OMEGA_SMOOTH_MAX) omega_delta = OMEGA_SMOOTH_MAX;
+    if (omega_delta < -OMEGA_SMOOTH_MAX) omega_delta = -OMEGA_SMOOTH_MAX;
+    best_omega = current_omega + omega_delta;
 
     *out_v = best_v;
     *out_omega = best_omega;
