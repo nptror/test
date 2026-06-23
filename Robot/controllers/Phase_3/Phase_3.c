@@ -34,6 +34,8 @@
 #define OBSTACLE_MARGIN 0.15
 #define SMOOTH_GAIN 0.15
 #define OMEGA_SMOOTH_MAX 0.1
+#define OMEGA_SMOOTH_ROTATE 0.3
+#define TURN_IN_PLACE_THRESHOLD 1.7
 #define SQRT2_MINUS_1 0.41421356237
 
 #define MAX_PATH_STEPS 10000
@@ -495,11 +497,11 @@ void update_dynamic_map_from_lidar(double robot_x, double robot_y, double robot_
         }
     }
 
-    // Clear robot's own footprint so it doesn't block itself
+    // Clear robot's own footprint — must cover full body (WHEEL_BASE=0.381m ≈ ±4px)
     int rmx, rmy;
     world_to_map(robot_x, robot_y, &rmx, &rmy);
-    for (int dy = -2; dy <= 2; dy++) {
-        for (int dx = -2; dx <= 2; dx++) {
+    for (int dy = -4; dy <= 4; dy++) {
+        for (int dx = -4; dx <= 4; dx++) {
             int nx = rmx + dx, ny = rmy + dy;
             if (nx >= 0 && nx < MAP_SIZE_W && ny >= 0 && ny < MAP_SIZE_H) {
                 dynamic_map[ny][nx] = 255;
@@ -783,15 +785,11 @@ double evaluate_trajectory(double v, double omega, double robot_x, double robot_
         cy_c += v * sin(th_c) * DT;
     }
 
-    // Hard clearance threshold — relaxed when approaching a table at close range
-    double min_clearance = OBSTACLE_MARGIN; // default 0.15m
-    if (near_table && dist_to_final_goal < 0.5) {
-        // Close to table delivery point: allow robot to come within 3cm of obstacles
-        min_clearance = 0.03;
-    } else if (near_table && dist_to_final_goal < 1.0) {
-        min_clearance = 0.08;
-    }
-    if (clearance < min_clearance) return 1e6;
+    // Hard reject only at actual collision distance (3cm)
+    // For near-table, allow even closer approach
+    double hard_min = 0.03;
+    if (near_table && dist_to_final_goal < 0.5) hard_min = 0.01;
+    if (clearance < hard_min && fabs(v) > 0.01) return 1e6;
 
     // Goal heading cost
     double dx_goal = goal_x - x;
@@ -803,7 +801,14 @@ double evaluate_trajectory(double v, double omega, double robot_x, double robot_
 
     double heading_cost = heading_err / M_PI;
     double vel_cost = 1.0 - (v / MAX_SPEED);
-    double clearance_cost = 1.0 - (clearance / LIDAR_MAX_RANGE);
+
+    // Soft clearance cost — steep penalty below OBSTACLE_MARGIN, normal above
+    double clearance_cost;
+    if (clearance < OBSTACLE_MARGIN) {
+        clearance_cost = 1.0 + 3.0 * (1.0 - clearance / OBSTACLE_MARGIN);
+    } else {
+        clearance_cost = 1.0 - (clearance / LIDAR_MAX_RANGE);
+    }
 
     double end_dist = hypot(goal_x - x, goal_y - y);
     double dist_cost = end_dist / 3.0;
@@ -839,10 +844,36 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
                  double goal_x, double goal_y, double *lidar_ranges,
                  double *out_v, double *out_omega,
                  double dist_to_final_goal, bool near_table) {
+    // Compute heading error to goal
+    double dx_g = goal_x - robot_x;
+    double dy_g = goal_y - robot_y;
+    double goal_th = atan2(dy_g, dx_g);
+    double h_err = goal_th - robot_theta;
+    while (h_err > M_PI) h_err -= 2 * M_PI;
+    while (h_err < -M_PI) h_err += 2 * M_PI;
+
+    // ---- Turn-in-place mode: goal is behind the robot ----
+    if (fabs(h_err) > TURN_IN_PLACE_THRESHOLD) {
+        *out_v = 0.0;
+        double target_omega = h_err * 2.0;
+        target_omega = fmax(-MAX_OMEGA, fmin(MAX_OMEGA, target_omega));
+
+        double delta = target_omega - current_omega;
+        if (delta > OMEGA_SMOOTH_ROTATE) delta = OMEGA_SMOOTH_ROTATE;
+        if (delta < -OMEGA_SMOOTH_ROTATE) delta = -OMEGA_SMOOTH_ROTATE;
+        *out_omega = current_omega + delta;
+        return;
+    }
+
+    // ---- Normal DWA mode ----
     double min_v = fmax(0.1, current_v - MAX_ACCEL * TIME_STEP / 1000.0);
     double max_v = fmin(MAX_SPEED, current_v + MAX_ACCEL * TIME_STEP / 1000.0);
 
-    // When very close to a table target, allow lower min velocity for fine approach
+    // Allow v=0 when heading error is moderate (>60°) so DWA can choose tight arcs
+    if (fabs(h_err) > M_PI / 3.0) {
+        min_v = 0.0;
+    }
+
     if (near_table && dist_to_final_goal < 0.3) {
         min_v = fmax(0.02, current_v - MAX_ACCEL * TIME_STEP / 1000.0);
     }
@@ -869,34 +900,47 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
     }
 
     if (best_cost == INFINITY || best_cost > 1000) {
-        double check_dist = 0.3;
-        double fx = robot_x + check_dist * cos(robot_theta);
-        double fy = robot_y + check_dist * sin(robot_theta);
-        int fmx, fmy;
-        world_to_map(fx, fy, &fmx, &fmy);
-        bool front_blocked = !is_free(fmx, fmy);
+        // Recovery: scan multiple directions for any opening
+        double recovery_v = 0.05;
+        double best_recovery_cost = INFINITY;
+        double best_recovery_omega = 0.0;
+        bool found_opening = false;
 
-        if (front_blocked) {
-            best_v = 0.0;
-            best_omega = 0.0;
-            printf("DWA: all trajectories blocked, stopping for safety.\n");
+        for (int j = 0; j <= OMEGA_SAMPLES; j++) {
+            double w = -MAX_OMEGA + 2.0 * MAX_OMEGA * j / OMEGA_SAMPLES;
+            double rx = robot_x + recovery_v * cos(robot_theta + w * 0.3) * 0.5;
+            double ry = robot_y + recovery_v * sin(robot_theta + w * 0.3) * 0.5;
+            int rmx, rmy;
+            world_to_map(rx, ry, &rmx, &rmy);
+            if (is_free(rmx, rmy)) {
+                double th_end = robot_theta + w * 0.5;
+                double err = goal_th - th_end;
+                while (err > M_PI) err -= 2 * M_PI;
+                while (err < -M_PI) err += 2 * M_PI;
+                double cost = fabs(err);
+                if (cost < best_recovery_cost) {
+                    best_recovery_cost = cost;
+                    best_recovery_omega = w;
+                    found_opening = true;
+                }
+            }
+        }
+
+        if (found_opening) {
+            best_v = recovery_v;
+            best_omega = best_recovery_omega;
         } else {
-            best_v = 0.2;
-            double dx = goal_x - robot_x;
-            double dy = goal_y - robot_y;
-            double target_th = atan2(dy, dx);
-            double err = target_th - robot_theta;
-            while (err > M_PI) err -= 2 * M_PI;
-            while (err < -M_PI) err += 2 * M_PI;
-            // Proportional steering instead of bang-bang ±0.5
-            best_omega = fmax(-MAX_OMEGA, fmin(MAX_OMEGA, err * 1.5));
+            // No opening found — rotate in place toward goal to find one
+            best_v = 0.0;
+            best_omega = (h_err > 0) ? 0.3 : -0.3;
         }
     }
 
-    // Post-filter: clamp omega change to OMEGA_SMOOTH_MAX per step
+    // Post-filter: smooth omega — relaxed limit when nearly stationary
+    double smooth_limit = (fabs(best_v) < 0.05) ? OMEGA_SMOOTH_ROTATE : OMEGA_SMOOTH_MAX;
     double omega_delta = best_omega - current_omega;
-    if (omega_delta > OMEGA_SMOOTH_MAX) omega_delta = OMEGA_SMOOTH_MAX;
-    if (omega_delta < -OMEGA_SMOOTH_MAX) omega_delta = -OMEGA_SMOOTH_MAX;
+    if (omega_delta > smooth_limit) omega_delta = smooth_limit;
+    if (omega_delta < -smooth_limit) omega_delta = -smooth_limit;
     best_omega = current_omega + omega_delta;
 
     *out_v = best_v;
