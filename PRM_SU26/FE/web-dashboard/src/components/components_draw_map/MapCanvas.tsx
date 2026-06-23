@@ -410,8 +410,9 @@ export function MapCanvas() {
   const removeObject = useMapStore((s) => s.removeObject);
 
   const [robotState, setRobotState] = useState<{ x: number; y: number; theta: number; status: string } | null>(null);
+  const [robotPath, setRobotPath] = useState<{ x: number; y: number }[]>([]);
 
-  // Poll robot position
+  // Poll robot position + path
   useEffect(() => {
     const fetchRobotStatus = async () => {
       try {
@@ -426,9 +427,20 @@ export function MapCanvas() {
         setRobotState(null);
       }
     };
+    const fetchRobotPath = async () => {
+      try {
+        const res = await fetch('http://localhost:3001/api/robot/path');
+        const data = await res.json();
+        setRobotPath(data.path || []);
+      } catch (err) {
+        setRobotPath([]);
+      }
+    };
     fetchRobotStatus();
-    const interval = setInterval(fetchRobotStatus, 150);
-    return () => clearInterval(interval);
+    fetchRobotPath();
+    const statusInterval = setInterval(fetchRobotStatus, 150);
+    const pathInterval = setInterval(fetchRobotPath, 500);
+    return () => { clearInterval(statusInterval); clearInterval(pathInterval); };
   }, []);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -901,6 +913,57 @@ export function MapCanvas() {
               onDelete={removeObject}
             />
           ))}
+
+          {/* Vẽ đường đi A* planned path */}
+          {robotPath.length >= 2 && (() => {
+            const mapSize = getMapPixels(floorSize, resolution);
+            const points = robotPath.map(p => {
+              const px = worldToPixel(p.x, p.y, floorSize, resolution);
+              return `${px.x},${px.y}`;
+            }).join(' ');
+            const dest = robotPath[robotPath.length - 1];
+            const destPx = worldToPixel(dest.x, dest.y, floorSize, resolution);
+            return (
+              <svg
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: mapSize,
+                  height: mapSize,
+                  pointerEvents: 'none',
+                  zIndex: 50,
+                  overflow: 'visible',
+                }}
+              >
+                <polyline
+                  points={points}
+                  fill="none"
+                  stroke="#ff4444"
+                  strokeWidth="3"
+                  strokeDasharray="10,5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity="0.85"
+                />
+                <circle
+                  cx={destPx.x}
+                  cy={destPx.y}
+                  r="8"
+                  fill="#ff4444"
+                  stroke="white"
+                  strokeWidth="2.5"
+                  opacity="0.9"
+                />
+                <circle
+                  cx={destPx.x}
+                  cy={destPx.y}
+                  r="3"
+                  fill="white"
+                />
+              </svg>
+            );
+          })()}
 
           {/* Vẽ Robot trên Canvas – chỉ từ GPS thực tế */}
           {robotState && (() => {

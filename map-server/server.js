@@ -185,6 +185,29 @@ app.get('/api/robot/status', (req, res) => {
     res.json({ x: 0, y: 0, theta: 0, v: 0, omega: 0, status: 'OFFLINE' });
 });
 
+app.get('/api/robot/path', (req, res) => {
+    try {
+        const pathFile = path.join(WEBOTS_CONTROLLER_DIR, 'robot_path.txt');
+        if (fs.existsSync(pathFile)) {
+            const data = fs.readFileSync(pathFile, 'utf8').trim();
+            if (!data || data === 'NONE') {
+                return res.json({ path: [] });
+            }
+            const points = data.split('\n').map(line => {
+                const parts = line.trim().split(/\s+/);
+                if (parts.length >= 2) {
+                    const x = parseFloat(parts[0]);
+                    const y = parseFloat(parts[1]);
+                    if (isFinite(x) && isFinite(y)) return { x, y };
+                }
+                return null;
+            }).filter(p => p !== null);
+            return res.json({ path: points });
+        }
+    } catch (err) { /* ignore */ }
+    res.json({ path: [] });
+});
+
 app.listen(PORT, () => {
     console.log(`Server đang chạy tại http://localhost:${PORT}`);
 });
