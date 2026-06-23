@@ -27,19 +27,29 @@
 #define DT 0.2
 #define V_SAMPLES 20
 #define OMEGA_SAMPLES 40
-#define PREDICT_TIME 1.2
-#define HEADING_GAIN 0.5
+#define PREDICT_TIME 2.0
+#define HEADING_GAIN 0.3
 #define CLEARANCE_GAIN 0.25
-#define VEL_GAIN 0.25
+#define VEL_GAIN 0.2
 #define OBSTACLE_MARGIN 0.15
+#define SMOOTH_GAIN 0.15
+#define OMEGA_SMOOTH_MAX 0.1
+#define SQRT2_MINUS_1 0.41421356237
 
 #define MAX_PATH_STEPS 10000
 #define WAYPOINT_ACCEPT_DIST 0.3
 #define MAX_WAYPOINTS 20
 
 // Lidar parameters
-#define LIDAR_NUM_SAMPLES 18
+#define LIDAR_MAX_SAMPLES 512
 #define LIDAR_MAX_RANGE 3.0
+
+// Dynamic obstacle map parameters
+#define DYNAMIC_DECAY_RATE 4
+#define DYNAMIC_OBSTACLE_THRESHOLD 128
+#define DYNAMIC_INFLATE_RADIUS 3
+#define REPLAN_CHECK_INTERVAL 10
+#define REPLAN_LOOKAHEAD 20
 
 // Dynamic map - maximum supported dimension
 #define MAX_MAP_DIM 1000
@@ -49,8 +59,9 @@ int MAP_SIZE_H = 400;
 double MAP_RESOLUTION = 0.05;
 
 // A* grid
-typedef struct { int x, y; double g, f; int px, py; bool closed; } AStarNode;
+typedef struct { int x, y; double g, f; int px, py; bool closed; unsigned int gen; } AStarNode;
 AStarNode grid[MAX_MAP_DIM][MAX_MAP_DIM];
+unsigned int astar_generation = 0;
 
 typedef struct { int x, y; } Node;
 typedef struct {
@@ -77,7 +88,7 @@ const char *get_state_string(enum RobotState state) {
 }
 
 // Heap
-#define HEAP_MAX 40000
+#define HEAP_MAX 200000
 typedef struct { int x, y; double f; } HeapNode;
 HeapNode heap[HEAP_MAX];
 int heap_size = 0;
@@ -90,10 +101,35 @@ double start_x = 0.0, start_y = 0.0;
 
 double current_v = 0.0, current_omega = 0.0;
 
+// Track current target waypoint name for dynamic stopping
+char current_target_name[64] = "";
+
 WbDeviceTag lidar;
-double lidar_ranges[LIDAR_NUM_SAMPLES];
+double lidar_ranges[LIDAR_MAX_SAMPLES];
+int lidar_actual_count = 0;
+double lidar_fov = M_PI;
+unsigned char dynamic_map[MAX_MAP_DIM][MAX_MAP_DIM];
+unsigned short dist_to_obstacle[MAX_MAP_DIM][MAX_MAP_DIM];
+
 Waypoint waypoints[MAX_WAYPOINTS];
 int num_waypoints = 0;
+
+// --- Helper: is current target a Table waypoint? ---
+bool is_table_target(void) {
+    return (strstr(current_target_name, "Table") != NULL ||
+            strstr(current_target_name, "table") != NULL);
+}
+
+// --- Helper: dynamic stopping distance based on target type ---
+double get_stopping_distance(void) {
+    if (is_table_target()) return 0.05;
+    return 0.15;
+}
+
+// --- Helper: check if robot velocity is near zero (DWA has decelerated) ---
+bool is_velocity_near_zero(double vl, double vr) {
+    return (fabs(vl) < 0.01 && fabs(vr) < 0.01);
+}
 
 // ------------------------------------------------------------
 // Heap functions
@@ -128,7 +164,9 @@ HeapNode heap_pop() {
 }
 
 double heuristic(int x1, int y1, int x2, int y2) {
-    return hypot(x1 - x2, y1 - y2);
+    int dx = abs(x1 - x2);
+    int dy = abs(y1 - y2);
+    return (dx > dy) ? dx + SQRT2_MINUS_1 * dy : dy + SQRT2_MINUS_1 * dx;
 }
 
 // ------------------------------------------------------------
@@ -156,30 +194,31 @@ void map_to_world(int mx, int my, double *wx, double *wy) {
 // Map helpers
 bool is_free(int x, int y) {
     if (x < 0 || x >= MAP_SIZE_W || y < 0 || y >= MAP_SIZE_H) return false;
+    return (static_map[y][x] >= 128) && (dynamic_map[y][x] >= DYNAMIC_OBSTACLE_THRESHOLD);
+}
+
+bool is_free_static(int x, int y) {
+    if (x < 0 || x >= MAP_SIZE_W || y < 0 || y >= MAP_SIZE_H) return false;
     return (static_map[y][x] >= 128);
 }
 
-// SỬA LỖI: đổi tên biến lặp thành xx, yy để không che khuất tham số con trỏ
 bool find_free(int *x, int *y, int r) {
     if (is_free(*x, *y)) return true;
     for (int rad = 1; rad <= r; rad++) {
-        for (int dx = -rad; dx <= rad; dx++) {
-            for (int dy = -rad; dy <= rad; dy++) {
-                int nx = *x + dx, ny = *y + dy;
-                if (is_free(nx, ny)) {
-                    *x = nx; *y = ny;
-                    return true;
-                }
+        for (int i = -rad; i <= rad; i++) {
+            int nx = *x + i;
+            if (nx >= 0 && nx < MAP_SIZE_W) {
+                int ny_top = *y - rad, ny_bot = *y + rad;
+                if (ny_top >= 0 && ny_top < MAP_SIZE_H && is_free(nx, ny_top)) { *x = nx; *y = ny_top; return true; }
+                if (ny_bot >= 0 && ny_bot < MAP_SIZE_H && is_free(nx, ny_bot)) { *x = nx; *y = ny_bot; return true; }
             }
         }
-    }
-    // Nếu không tìm thấy trong bán kính, duyệt toàn bộ map
-    for (int yy = 0; yy < MAP_SIZE_H; yy++) {
-        for (int xx = 0; xx < MAP_SIZE_W; xx++) {
-            if (is_free(xx, yy)) {
-                *x = xx;
-                *y = yy;
-                return true;
+        for (int i = -rad + 1; i < rad; i++) {
+            int ny = *y + i;
+            if (ny >= 0 && ny < MAP_SIZE_H) {
+                int nx_left = *x - rad, nx_right = *x + rad;
+                if (nx_left >= 0 && nx_left < MAP_SIZE_W && is_free(nx_left, ny)) { *x = nx_left; *y = ny; return true; }
+                if (nx_right >= 0 && nx_right < MAP_SIZE_W && is_free(nx_right, ny)) { *x = nx_right; *y = ny; return true; }
             }
         }
     }
@@ -259,6 +298,25 @@ void load_meta(double *start_x, double *start_y) {
     printf("Loaded robot start position from meta: (%.2f, %.2f)\n", *start_x, *start_y);
 }
 
+// Ghi planned path ra file để UI hiển thị
+void write_path_to_file(double robot_x, double robot_y) {
+    FILE *fp = fopen("robot_path.txt", "w");
+    if (!fp) return;
+    fprintf(fp, "%.4f %.4f\n", robot_x, robot_y);
+    for (int i = 0; i < path_len; i++) {
+        double wx, wy;
+        map_to_world(global_path[i].x, global_path[i].y, &wx, &wy);
+        fprintf(fp, "%.4f %.4f\n", wx, wy);
+    }
+    fprintf(fp, "%.4f %.4f\n", target_x, target_y);
+    fclose(fp);
+}
+
+void clear_path_file(void) {
+    FILE *fp = fopen("robot_path.txt", "w");
+    if (fp) { fprintf(fp, "NONE\n"); fclose(fp); }
+}
+
 // Ghi trạng thái robot ra file robot_state.txt
 void write_robot_state(double x, double y, double theta, double v, double omega, const char *status) {
     FILE *fp = fopen("robot_state.txt", "w");
@@ -284,9 +342,9 @@ void read_robot_command(double *target_x, double *target_y, bool *target_receive
                 *target_received = true;
                 *has_path = false;
                 *state = STATE_RETURN_TO_KITCHEN;
+                strncpy(current_target_name, "robotStart", sizeof(current_target_name) - 1);
                 printf("Command: NAV_TO_TABLE -> START (%.2f, %.2f)\n", *target_x, *target_y);
             } else {
-                // Tìm waypoint có tên khớp với target
                 for (int i = 0; i < num_waypoints; i++) {
                     if (waypoints[i].valid && strcmp(waypoints[i].name, target) == 0) {
                         *target_x = waypoints[i].x;
@@ -294,6 +352,8 @@ void read_robot_command(double *target_x, double *target_y, bool *target_receive
                         *target_received = true;
                         *has_path = false;
                         *state = STATE_NAV_TO_TABLE;
+                        strncpy(current_target_name, waypoints[i].name, sizeof(current_target_name) - 1);
+                        current_target_name[sizeof(current_target_name) - 1] = '\0';
                         printf("Command: NAV_TO_TABLE -> %s (%.2f, %.2f)\n", target, *target_x, *target_y);
                         break;
                     }
@@ -329,6 +389,7 @@ void read_robot_command(double *target_x, double *target_y, bool *target_receive
             *manual_omega = 0.0;
             wb_motor_set_velocity(left_motor, 0.0);
             wb_motor_set_velocity(right_motor, 0.0);
+            clear_path_file();
             printf("Command: STOP\n");
         }
     }
@@ -379,74 +440,306 @@ void load_wp(Waypoint *wp, int *cnt) {
 }
 
 // ------------------------------------------------------------
+// Dynamic obstacle map functions
+// ------------------------------------------------------------
+void init_dynamic_map(void) {
+    memset(dynamic_map, 255, sizeof(dynamic_map));
+}
+
+void decay_dynamic_map(void) {
+    for (int y = 0; y < MAP_SIZE_H; y++) {
+        for (int x = 0; x < MAP_SIZE_W; x++) {
+            if (dynamic_map[y][x] < 255) {
+                int val = dynamic_map[y][x] + DYNAMIC_DECAY_RATE;
+                dynamic_map[y][x] = (unsigned char)(val > 255 ? 255 : val);
+            }
+        }
+    }
+}
+
+void mark_dynamic_obstacle(int mx, int my) {
+    for (int dy = -DYNAMIC_INFLATE_RADIUS; dy <= DYNAMIC_INFLATE_RADIUS; dy++) {
+        for (int dx = -DYNAMIC_INFLATE_RADIUS; dx <= DYNAMIC_INFLATE_RADIUS; dx++) {
+            if (dx * dx + dy * dy > DYNAMIC_INFLATE_RADIUS * DYNAMIC_INFLATE_RADIUS) continue;
+            int nx = mx + dx, ny = my + dy;
+            if (nx < 0 || nx >= MAP_SIZE_W || ny < 0 || ny >= MAP_SIZE_H) continue;
+            if (static_map[ny][nx] >= 128) {
+                dynamic_map[ny][nx] = 0;
+            }
+        }
+    }
+}
+
+void update_dynamic_map_from_lidar(double robot_x, double robot_y, double robot_theta,
+                                    const double *ranges, int count, double fov) {
+    decay_dynamic_map();
+
+    if (count <= 0) return;
+
+    double angle_min = -fov / 2.0;
+    double angle_inc = (count > 1) ? fov / (double)(count - 1) : 0.0;
+
+    for (int i = 0; i < count; i++) {
+        double range = ranges[i];
+        if (!isfinite(range) || range <= 0.05 || range >= LIDAR_MAX_RANGE) continue;
+
+        double angle = robot_theta + angle_min + angle_inc * i;
+        double wx = robot_x + range * cos(angle);
+        double wy = robot_y + range * sin(angle);
+
+        int mx, my;
+        world_to_map(wx, wy, &mx, &my);
+
+        if (static_map[my][mx] >= 128) {
+            mark_dynamic_obstacle(mx, my);
+        }
+    }
+
+    // Clear robot's own footprint so it doesn't block itself
+    int rmx, rmy;
+    world_to_map(robot_x, robot_y, &rmx, &rmy);
+    for (int dy = -2; dy <= 2; dy++) {
+        for (int dx = -2; dx <= 2; dx++) {
+            int nx = rmx + dx, ny = rmy + dy;
+            if (nx >= 0 && nx < MAP_SIZE_W && ny >= 0 && ny < MAP_SIZE_H) {
+                dynamic_map[ny][nx] = 255;
+            }
+        }
+    }
+}
+
+bool check_path_blocked_by_dynamic(void) {
+    if (!has_path || path_idx >= path_len) return false;
+
+    int check_end = path_idx + REPLAN_LOOKAHEAD;
+    if (check_end > path_len) check_end = path_len;
+
+    for (int i = path_idx; i < check_end; i++) {
+        int px = global_path[i].x;
+        int py = global_path[i].y;
+        if (px >= 0 && px < MAP_SIZE_W && py >= 0 && py < MAP_SIZE_H) {
+            if (dynamic_map[py][px] < DYNAMIC_OBSTACLE_THRESHOLD) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// ------------------------------------------------------------
+// Adjust goal cell out of inflation zone along obstacle->goal vector
+// Returns true if adjustment was made
+bool adjust_goal_for_inflation(int *gx, int *gy) {
+    if (is_free(*gx, *gy)) return false;
+
+    // Find the nearest obstacle center by scanning around goal
+    int obs_cx = *gx, obs_cy = *gy;
+    double min_obs_dist = 1e6;
+    int scan_r = 10;
+    for (int dy = -scan_r; dy <= scan_r; dy++) {
+        for (int dx = -scan_r; dx <= scan_r; dx++) {
+            int nx = *gx + dx, ny = *gy + dy;
+            if (nx < 0 || nx >= MAP_SIZE_W || ny < 0 || ny >= MAP_SIZE_H) continue;
+            // Hard obstacle: pixel value near 0
+            if (static_map[ny][nx] < 50) {
+                double d = hypot(dx, dy);
+                if (d < min_obs_dist) {
+                    min_obs_dist = d;
+                    obs_cx = nx;
+                    obs_cy = ny;
+                }
+            }
+        }
+    }
+
+    // Compute direction vector from obstacle center to goal
+    double vx = (double)(*gx - obs_cx);
+    double vy = (double)(*gy - obs_cy);
+    double vlen = hypot(vx, vy);
+    if (vlen < 0.001) {
+        // Goal is right on obstacle center — push in +x direction as fallback
+        vx = 1.0; vy = 0.0; vlen = 1.0;
+    }
+    vx /= vlen;
+    vy /= vlen;
+
+    // Walk outward along the vector 1 pixel at a time until we find a free cell
+    for (int step = 1; step <= 20; step++) {
+        int nx = *gx + (int)(vx * step);
+        int ny = *gy + (int)(vy * step);
+        if (nx < 0 || nx >= MAP_SIZE_W || ny < 0 || ny >= MAP_SIZE_H) continue;
+        if (is_free(nx, ny)) {
+            printf("Goal adjusted from (%d,%d) to (%d,%d) — pushed %d px out of inflation zone\n",
+                   *gx, *gy, nx, ny, step);
+            *gx = nx;
+            *gy = ny;
+            return true;
+        }
+    }
+
+    // Fallback: find nearest free cell (original behavior)
+    return false;
+}
+
+// ------------------------------------------------------------
+// Distance transform — Chebyshev distance to nearest obstacle
+// Single lookup replaces 5×5 neighbor scan in DWA clearance check
+void compute_distance_transform(void) {
+    int h = MAP_SIZE_H, w = MAP_SIZE_W;
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++)
+            dist_to_obstacle[y][x] = is_free(x, y) ? 30000 : 0;
+
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            unsigned short d = dist_to_obstacle[y][x];
+            if (d == 0) continue;
+            if (y > 0) {
+                unsigned short u = dist_to_obstacle[y-1][x] + 1; if (u < d) d = u;
+                if (x > 0)   { u = dist_to_obstacle[y-1][x-1] + 1; if (u < d) d = u; }
+                if (x < w-1) { u = dist_to_obstacle[y-1][x+1] + 1; if (u < d) d = u; }
+            }
+            if (x > 0) { unsigned short u = dist_to_obstacle[y][x-1] + 1; if (u < d) d = u; }
+            dist_to_obstacle[y][x] = d;
+        }
+    }
+    for (int y = h - 1; y >= 0; y--) {
+        for (int x = w - 1; x >= 0; x--) {
+            unsigned short d = dist_to_obstacle[y][x];
+            if (d == 0) continue;
+            if (y < h-1) {
+                unsigned short u = dist_to_obstacle[y+1][x] + 1; if (u < d) d = u;
+                if (x > 0)   { u = dist_to_obstacle[y+1][x-1] + 1; if (u < d) d = u; }
+                if (x < w-1) { u = dist_to_obstacle[y+1][x+1] + 1; if (u < d) d = u; }
+            }
+            if (x < w-1) { unsigned short u = dist_to_obstacle[y][x+1] + 1; if (u < d) d = u; }
+            dist_to_obstacle[y][x] = d;
+        }
+    }
+}
+
+// A* generation-based lazy cell init — O(1) instead of O(W*H)
+static inline void grid_init_cell(int x, int y) {
+    if (grid[y][x].gen != astar_generation) {
+        grid[y][x].g = INFINITY;
+        grid[y][x].f = INFINITY;
+        grid[y][x].closed = false;
+        grid[y][x].gen = astar_generation;
+    }
+}
+
+// Bresenham line-of-sight check on the map
+bool line_of_sight(int x0, int y0, int x1, int y1) {
+    int dx = abs(x1 - x0), dy = abs(y1 - y0);
+    int sx = (x0 < x1) ? 1 : -1;
+    int sy = (y0 < y1) ? 1 : -1;
+    int err = dx - dy;
+    while (1) {
+        if (!is_free_static(x0, y0)) return false;
+        if (x0 == x1 && y0 == y1) return true;
+        int e2 = 2 * err;
+        if (e2 > -dy) { err -= dy; x0 += sx; }
+        if (e2 < dx)  { err += dx; y0 += sy; }
+    }
+}
+
+// Greedy path simplification — scan from farthest to nearest for each anchor
+void simplify_path(void) {
+    if (path_len <= 2) return;
+    static Node simplified[MAX_PATH_STEPS];
+    int slen = 0;
+    simplified[slen++] = global_path[0];
+
+    int anchor = 0;
+    while (anchor < path_len - 1) {
+        int farthest = anchor + 1;
+        for (int i = path_len - 1; i > anchor + 1; i--) {
+            if (line_of_sight(global_path[anchor].x, global_path[anchor].y,
+                              global_path[i].x, global_path[i].y)) {
+                farthest = i;
+                break;
+            }
+        }
+        simplified[slen++] = global_path[farthest];
+        anchor = farthest;
+    }
+
+    int original_len = path_len;
+    path_len = slen;
+    memcpy(global_path, simplified, slen * sizeof(Node));
+    printf("Path simplified: %d -> %d waypoints\n", original_len, slen);
+}
+
+// ------------------------------------------------------------
 // A* planning
 bool plan_path(int sx, int sy, int gx, int gy) {
-    // Tăng bán kính tìm kiếm lên kích thước map để đảm bảo tìm thấy ô trống
-    int search_radius = MAP_SIZE_W; // 400
+    int search_radius = 50;
     if (!find_free(&sx, &sy, search_radius)) {
         printf("A* Error: Cannot find free cell near start!\n");
         return false;
     }
-    if (!find_free(&gx, &gy, search_radius)) {
-        printf("A* Error: Cannot find free cell near goal!\n");
-        return false;
-    }
-
-    for (int y = 0; y < MAP_SIZE_H; y++) {
-        for (int x = 0; x < MAP_SIZE_W; x++) {
-            grid[y][x].g = INFINITY;
-            grid[y][x].f = INFINITY;
-            grid[y][x].closed = false;
-            grid[y][x].px = 0;
-            grid[y][x].py = 0;
+    if (!is_free(gx, gy)) {
+        if (!adjust_goal_for_inflation(&gx, &gy)) {
+            if (!find_free(&gx, &gy, search_radius)) {
+                printf("A* Error: Cannot find free cell near goal!\n");
+                return false;
+            }
         }
     }
+
+    astar_generation++;
     heap_size = 0;
+
+    grid_init_cell(sx, sy);
     grid[sy][sx].g = 0;
     grid[sy][sx].f = heuristic(sx, sy, gx, gy);
     heap_push(sx, sy, grid[sy][sx].f);
 
+    static const int dx8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+    static const int dy8[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+    static const double cost8[8] = {1.41421356, 1.0, 1.41421356, 1.0, 1.0, 1.41421356, 1.0, 1.41421356};
+
     while (heap_size > 0) {
         HeapNode cur = heap_pop();
         int cx = cur.x, cy = cur.y;
+
+        grid_init_cell(cx, cy);
         if (grid[cy][cx].closed) continue;
         grid[cy][cx].closed = true;
 
         if (cx == gx && cy == gy) {
-            Node tmp[MAX_PATH_STEPS];
+            static Node tmp[MAX_PATH_STEPS];
             int len = 0, tx = gx, ty = gy;
-            while (tx != sx || ty != sy) {
+            while ((tx != sx || ty != sy) && len < MAX_PATH_STEPS) {
                 tmp[len].x = tx; tmp[len].y = ty; len++;
-                if (len >= MAX_PATH_STEPS) break;
-                int px = grid[ty][tx].px;
-                int py = grid[ty][tx].py;
-                tx = px; ty = py;
+                int ppx = grid[ty][tx].px;
+                int ppy = grid[ty][tx].py;
+                tx = ppx; ty = ppy;
             }
             path_len = 0;
-            for (int i = len - 1; i >= 0; i--) {
+            for (int i = len - 1; i >= 0; i--)
                 global_path[path_len++] = tmp[i];
-            }
             if (path_len == 0) return false;
             path_idx = 0;
+            simplify_path();
             return true;
         }
 
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
-                if (dx == 0 && dy == 0) continue;
-                int nx = cx + dx, ny = cy + dy;
-                if (nx < 0 || nx >= MAP_SIZE_W || ny < 0 || ny >= MAP_SIZE_H) continue;
-                if (!is_free(nx, ny) || grid[ny][nx].closed) continue;
+        for (int d = 0; d < 8; d++) {
+            int nx = cx + dx8[d], ny = cy + dy8[d];
+            if (nx < 0 || nx >= MAP_SIZE_W || ny < 0 || ny >= MAP_SIZE_H) continue;
+            if (!is_free(nx, ny)) continue;
 
-                double cost = hypot(dx, dy);
-                double newg = grid[cy][cx].g + cost;
-                if (newg < grid[ny][nx].g) {
-                    grid[ny][nx].px = cx;
-                    grid[ny][nx].py = cy;
-                    grid[ny][nx].g = newg;
-                    grid[ny][nx].f = newg + heuristic(nx, ny, gx, gy);
-                    heap_push(nx, ny, grid[ny][nx].f);
-                }
+            grid_init_cell(nx, ny);
+            if (grid[ny][nx].closed) continue;
+
+            double newg = grid[cy][cx].g + cost8[d];
+            if (newg < grid[ny][nx].g) {
+                grid[ny][nx].px = cx;
+                grid[ny][nx].py = cy;
+                grid[ny][nx].g = newg;
+                grid[ny][nx].f = newg + heuristic(nx, ny, gx, gy);
+                heap_push(nx, ny, grid[ny][nx].f);
             }
         }
     }
@@ -455,8 +748,11 @@ bool plan_path(int sx, int sy, int gx, int gy) {
 
 // ------------------------------------------------------------
 // DWA evaluation
+// dist_to_final_goal: distance from robot to final target (not local waypoint)
+// near_table: true when destination is a Table waypoint
 double evaluate_trajectory(double v, double omega, double robot_x, double robot_y, double robot_theta,
-                           double goal_x, double goal_y, double *lidar_ranges) {
+                           double goal_x, double goal_y, double *lidar_ranges,
+                           double dist_to_final_goal, bool near_table) {
     double x = robot_x, y = robot_y, th = robot_theta;
     int steps = (int)(PREDICT_TIME / DT);
     bool collision = false;
@@ -473,31 +769,31 @@ double evaluate_trajectory(double v, double omega, double robot_x, double robot_
     }
     if (collision) return 1e6;
 
+    // Clearance via distance transform — single lookup per sample point
     double clearance = LIDAR_MAX_RANGE;
-    double step_dist = 0.05;
-    double path_length = v * PREDICT_TIME;
-    int num_steps = (int)(path_length / step_dist) + 1;
-    for (int s = 0; s <= num_steps; s++) {
-        double t = (double)s / num_steps * PREDICT_TIME;
-        double cx = robot_x + v * cos(robot_theta + omega * t / 2.0) * t;
-        double cy = robot_y + v * sin(robot_theta + omega * t / 2.0) * t;
+    int steps_c = (int)(PREDICT_TIME / DT);
+    double cx_c = robot_x, cy_c = robot_y, th_c = robot_theta;
+    for (int sc = 0; sc <= steps_c; sc++) {
         int mx, my;
-        world_to_map(cx, cy, &mx, &my);
-
-        double min_d = 1e6;
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dy = -2; dy <= 2; dy++) {
-                int nx = mx + dx, ny = my + dy;
-                if (nx >= 0 && nx < MAP_SIZE_W && ny >= 0 && ny < MAP_SIZE_H && !is_free(nx, ny)) {
-                    double d = hypot(dx * MAP_RESOLUTION, dy * MAP_RESOLUTION);
-                    if (d < min_d) min_d = d;
-                }
-            }
-        }
-        if (min_d < clearance) clearance = min_d;
+        world_to_map(cx_c, cy_c, &mx, &my);
+        double d = dist_to_obstacle[my][mx] * MAP_RESOLUTION;
+        if (d < clearance) clearance = d;
+        th_c += omega * DT;
+        cx_c += v * cos(th_c) * DT;
+        cy_c += v * sin(th_c) * DT;
     }
-    if (clearance < 0.05) return 1e6;
 
+    // Hard clearance threshold — relaxed when approaching a table at close range
+    double min_clearance = OBSTACLE_MARGIN; // default 0.15m
+    if (near_table && dist_to_final_goal < 0.5) {
+        // Close to table delivery point: allow robot to come within 3cm of obstacles
+        min_clearance = 0.03;
+    } else if (near_table && dist_to_final_goal < 1.0) {
+        min_clearance = 0.08;
+    }
+    if (clearance < min_clearance) return 1e6;
+
+    // Goal heading cost
     double dx_goal = goal_x - x;
     double dy_goal = goal_y - y;
     double goal_dir = atan2(dy_goal, dx_goal);
@@ -509,14 +805,48 @@ double evaluate_trajectory(double v, double omega, double robot_x, double robot_
     double vel_cost = 1.0 - (v / MAX_SPEED);
     double clearance_cost = 1.0 - (clearance / LIDAR_MAX_RANGE);
 
-    return HEADING_GAIN * heading_cost + CLEARANCE_GAIN * clearance_cost + VEL_GAIN * vel_cost;
+    double end_dist = hypot(goal_x - x, goal_y - y);
+    double dist_cost = end_dist / 3.0;
+
+    // Smoothness cost — penalize large omega changes from current
+    double smooth_cost = fabs(omega - current_omega) / (2.0 * MAX_OMEGA);
+
+    double w_heading = HEADING_GAIN;      // 0.3
+    double w_clearance = CLEARANCE_GAIN;  // 0.25
+    double w_vel = VEL_GAIN;              // 0.2
+    double w_dist = 0.25;
+    double w_smooth = SMOOTH_GAIN;        // 0.15
+
+    if (near_table && dist_to_final_goal < 1.0) {
+        w_heading = 0.6;
+        w_clearance = 0.05;
+        w_vel = 0.05;
+        w_dist = 0.6;
+        w_smooth = 0.05;
+    } else if (near_table && dist_to_final_goal < 2.0) {
+        w_heading = 0.4;
+        w_clearance = 0.15;
+        w_vel = 0.15;
+        w_dist = 0.3;
+        w_smooth = 0.10;
+    }
+
+    return w_heading * heading_cost + w_clearance * clearance_cost
+         + w_vel * vel_cost + w_dist * dist_cost + w_smooth * smooth_cost;
 }
 
 void dwa_control(double robot_x, double robot_y, double robot_theta,
                  double goal_x, double goal_y, double *lidar_ranges,
-                 double *out_v, double *out_omega) {
+                 double *out_v, double *out_omega,
+                 double dist_to_final_goal, bool near_table) {
     double min_v = fmax(0.1, current_v - MAX_ACCEL * TIME_STEP / 1000.0);
     double max_v = fmin(MAX_SPEED, current_v + MAX_ACCEL * TIME_STEP / 1000.0);
+
+    // When very close to a table target, allow lower min velocity for fine approach
+    if (near_table && dist_to_final_goal < 0.3) {
+        min_v = fmax(0.02, current_v - MAX_ACCEL * TIME_STEP / 1000.0);
+    }
+
     double min_omega = fmax(-MAX_OMEGA, current_omega - MAX_OMEGA_ACCEL * TIME_STEP / 1000.0);
     double max_omega = fmin(MAX_OMEGA, current_omega + MAX_OMEGA_ACCEL * TIME_STEP / 1000.0);
 
@@ -528,7 +858,8 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
         for (int j = 0; j <= OMEGA_SAMPLES; j++) {
             double omega = min_omega + (max_omega - min_omega) * j / OMEGA_SAMPLES;
             double cost = evaluate_trajectory(v, omega, robot_x, robot_y, robot_theta,
-                                               goal_x, goal_y, lidar_ranges);
+                                               goal_x, goal_y, lidar_ranges,
+                                               dist_to_final_goal, near_table);
             if (cost >= 0 && cost < best_cost) {
                 best_cost = cost;
                 best_v = v;
@@ -538,15 +869,35 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
     }
 
     if (best_cost == INFINITY || best_cost > 1000) {
-        best_v = 0.2;
-        double dx = goal_x - robot_x;
-        double dy = goal_y - robot_y;
-        double target_th = atan2(dy, dx);
-        double err = target_th - robot_theta;
-        while (err > M_PI) err -= 2 * M_PI;
-        while (err < -M_PI) err += 2 * M_PI;
-        best_omega = (err > 0) ? 0.5 : -0.5;
+        double check_dist = 0.3;
+        double fx = robot_x + check_dist * cos(robot_theta);
+        double fy = robot_y + check_dist * sin(robot_theta);
+        int fmx, fmy;
+        world_to_map(fx, fy, &fmx, &fmy);
+        bool front_blocked = !is_free(fmx, fmy);
+
+        if (front_blocked) {
+            best_v = 0.0;
+            best_omega = 0.0;
+            printf("DWA: all trajectories blocked, stopping for safety.\n");
+        } else {
+            best_v = 0.2;
+            double dx = goal_x - robot_x;
+            double dy = goal_y - robot_y;
+            double target_th = atan2(dy, dx);
+            double err = target_th - robot_theta;
+            while (err > M_PI) err -= 2 * M_PI;
+            while (err < -M_PI) err += 2 * M_PI;
+            // Proportional steering instead of bang-bang ±0.5
+            best_omega = fmax(-MAX_OMEGA, fmin(MAX_OMEGA, err * 1.5));
+        }
     }
+
+    // Post-filter: clamp omega change to OMEGA_SMOOTH_MAX per step
+    double omega_delta = best_omega - current_omega;
+    if (omega_delta > OMEGA_SMOOTH_MAX) omega_delta = OMEGA_SMOOTH_MAX;
+    if (omega_delta < -OMEGA_SMOOTH_MAX) omega_delta = -OMEGA_SMOOTH_MAX;
+    best_omega = current_omega + omega_delta;
 
     *out_v = best_v;
     *out_omega = best_omega;
@@ -564,6 +915,8 @@ int main(int argc, char **argv) {
         printf("Failed to load map.\n");
         return -1;
     }
+    init_dynamic_map();
+    compute_distance_transform();
 
     WbDeviceTag left_motor = wb_robot_get_device("left wheel");
     WbDeviceTag right_motor = wb_robot_get_device("right wheel");
@@ -582,6 +935,10 @@ int main(int argc, char **argv) {
     if (lidar != 0) {
         wb_lidar_enable(lidar, TIME_STEP);
         wb_lidar_enable_point_cloud(lidar);
+        lidar_fov = wb_lidar_get_fov(lidar);
+        lidar_actual_count = wb_lidar_get_number_of_points(lidar);
+        if (lidar_actual_count > LIDAR_MAX_SAMPLES) lidar_actual_count = LIDAR_MAX_SAMPLES;
+        printf("Lidar: %d points, FOV = %.1f deg\n", lidar_actual_count, lidar_fov * 180.0 / M_PI);
     }
 
     wb_keyboard_enable(TIME_STEP);
@@ -719,17 +1076,34 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        // Lidar
+        // Lidar — read all available points and update dynamic obstacle map
         if (lidar != 0) {
             const float *ranges = wb_lidar_get_range_image(lidar);
             if (ranges) {
                 int n = wb_lidar_get_number_of_points(lidar);
-                int samples = n < LIDAR_NUM_SAMPLES ? n : LIDAR_NUM_SAMPLES;
+                int samples = (n < LIDAR_MAX_SAMPLES) ? n : LIDAR_MAX_SAMPLES;
+                lidar_actual_count = samples;
                 for (int i = 0; i < samples; i++) {
                     lidar_ranges[i] = ranges[i];
                     if (lidar_ranges[i] < 0.05) lidar_ranges[i] = 0.05;
                 }
-                for (int i = samples; i < LIDAR_NUM_SAMPLES; i++) lidar_ranges[i] = LIDAR_MAX_RANGE;
+                for (int i = samples; i < LIDAR_MAX_SAMPLES; i++) lidar_ranges[i] = LIDAR_MAX_RANGE;
+
+                update_dynamic_map_from_lidar(robot_x, robot_y, robot_theta,
+                                               lidar_ranges, lidar_actual_count, lidar_fov);
+                compute_distance_transform();
+            }
+        }
+
+        // Re-plan if dynamic obstacle blocks current path
+        {
+            static int replan_counter = 0;
+            if (has_path && ++replan_counter >= REPLAN_CHECK_INTERVAL) {
+                replan_counter = 0;
+                if (check_path_blocked_by_dynamic()) {
+                    printf("Dynamic obstacle on path! Re-planning...\n");
+                    has_path = false;
+                }
             }
         }
 
@@ -743,6 +1117,8 @@ int main(int argc, char **argv) {
                 target_received = true;
                 has_path = false;
                 robot_state = STATE_NAV_TO_TABLE;
+                strncpy(current_target_name, waypoints[idx].name, sizeof(current_target_name) - 1);
+                current_target_name[sizeof(current_target_name) - 1] = '\0';
                 printf("Go to %s: (%.2f, %.2f)\n", waypoints[idx].name, target_x, target_y);
             } else if (num_waypoints == 0 && (key == '1' || key == '2')) {
                 target_x = (key == '1') ? robot_x : -0.8;
@@ -756,17 +1132,18 @@ int main(int argc, char **argv) {
 
         // Global path planning
         if (target_received && !has_path) {
-            // --- Kiểm tra: robot đã ở gần đích chưa? ---
             double dist_to_goal = hypot(target_x - robot_x, target_y - robot_y);
-            if (dist_to_goal < WAYPOINT_ACCEPT_DIST) {
-                // Đã ở tại đích, không cần A*
+            double stop_dist = get_stopping_distance();
+            if (dist_to_goal < stop_dist) {
                 target_received = false;
                 has_path = false;
                 robot_state = STATE_IDLE;
-                printf("\n========== ARRIVED (already at goal) ==========\n");
+                printf("\n========== ARRIVED (already at goal, d=%.3f < %.3f) ==========\n",
+                       dist_to_goal, stop_dist);
                 current_v = 0.0; current_omega = 0.0;
                 wb_motor_set_velocity(left_motor, 0.0);
                 wb_motor_set_velocity(right_motor, 0.0);
+                clear_path_file();
                 write_robot_state(robot_x, robot_y, robot_theta, 0.0, 0.0, get_state_string(robot_state));
                 continue;
             }
@@ -784,6 +1161,7 @@ int main(int argc, char **argv) {
                 current_v = 0.0; current_omega = 0.0;
                 wb_motor_set_velocity(left_motor, 0.0);
                 wb_motor_set_velocity(right_motor, 0.0);
+                clear_path_file();
                 write_robot_state(robot_x, robot_y, robot_theta, 0.0, 0.0, get_state_string(robot_state));
                 continue;
             }
@@ -791,12 +1169,19 @@ int main(int argc, char **argv) {
             if (plan_path(sx, sy, gx, gy)) {
                 printf("Path found, %d waypoints.\n", path_len);
                 has_path = true;
+                write_path_to_file(robot_x, robot_y);
             } else {
-                // A* thực sự thất bại — không có đường đi hợp lệ
                 target_received = false;
                 printf("No path! Cannot reach target (%.2f, %.2f).\n", target_x, target_y);
+                clear_path_file();
             }
         }
+
+        // ============================================================
+        // Distance to FINAL target (for dynamic stopping & DWA tuning)
+        double dist_to_final = hypot(target_x - robot_x, target_y - robot_y);
+        double stop_dist = get_stopping_distance();
+        bool near_table = is_table_target();
 
         // ============================================================
         // Xác định local_goal và cập nhật waypoint
@@ -808,24 +1193,47 @@ int main(int argc, char **argv) {
             map_to_world(wx, wy, &current_wp_x, &current_wp_y);
             double dist_to_current = hypot(current_wp_x - robot_x, current_wp_y - robot_y);
 
-            if (dist_to_current < WAYPOINT_ACCEPT_DIST) {
-                if (path_idx < path_len - 1) {
-                    path_idx++;
-                    continue;
-                } else {
+            // For intermediate waypoints: use generous accept distance
+            // For the LAST waypoint: use dynamic stopping distance
+            bool is_last_wp = (path_idx >= path_len - 1);
+            double wp_accept = is_last_wp ? stop_dist : WAYPOINT_ACCEPT_DIST;
+
+            // Table final arrival: also check velocity (DWA deceleration)
+            bool velocity_stopped = is_velocity_near_zero(current_v, current_omega);
+            bool final_arrived = false;
+
+            if (is_last_wp) {
+                if (dist_to_final < stop_dist) {
+                    final_arrived = true;
+                } else if (near_table && dist_to_final < 0.15 && velocity_stopped) {
+                    // DWA has decelerated to near-zero near a table — accept arrival
+                    final_arrived = true;
+                    printf("Table arrival: DWA decelerated, d=%.3f v=%.4f\n",
+                           dist_to_final, current_v);
+                }
+            }
+
+            if (dist_to_current < wp_accept || final_arrived) {
+                if (is_last_wp || final_arrived) {
                     has_path = false;
                     target_received = false;
                     robot_state = STATE_IDLE;
-                    printf("\n========== ARRIVED ==========\n");
+                    printf("\n========== ARRIVED (d=%.3f, threshold=%.3f) ==========\n",
+                           dist_to_final, stop_dist);
                     current_v = 0;
                     current_omega = 0;
                     wb_motor_set_velocity(left_motor, 0);
                     wb_motor_set_velocity(right_motor, 0);
+                    clear_path_file();
                     write_robot_state(robot_x, robot_y, robot_theta, 0.0, 0.0, get_state_string(robot_state));
+                    continue;
+                } else {
+                    path_idx++;
                     continue;
                 }
             }
 
+            // Segment-based advancement for intermediate waypoints only
             bool should_advance = false;
             if (path_idx < path_len - 1) {
                 int next_wx = global_path[path_idx + 1].x;
@@ -843,42 +1251,39 @@ int main(int argc, char **argv) {
                         should_advance = true;
                     }
                 }
-            } else {
-                if (dist_to_current < WAYPOINT_ACCEPT_DIST * 1.5) {
-                    should_advance = true;
-                }
             }
 
-            if (should_advance) {
-                if (path_idx < path_len - 1) {
-                    path_idx++;
-                    continue;
-                } else {
-                    has_path = false;
-                    target_received = false;
-                    robot_state = STATE_IDLE;
-                    printf("\n========== ARRIVED ==========\n");
-                    current_v = 0;
-                    current_omega = 0;
-                    wb_motor_set_velocity(left_motor, 0);
-                    wb_motor_set_velocity(right_motor, 0);
-                    write_robot_state(robot_x, robot_y, robot_theta, 0.0, 0.0, get_state_string(robot_state));
-                    continue;
-                }
+            if (should_advance && path_idx < path_len - 1) {
+                path_idx++;
+                continue;
             }
 
-            int look_ahead_idx = path_idx + 4;
+            // Look-ahead: when close to final target on a table, reduce look-ahead
+            // so DWA aims precisely at the delivery pin
+            int look_ahead = 4;
+            if (near_table && dist_to_final < 0.5) {
+                look_ahead = 1;
+            } else if (near_table && dist_to_final < 1.0) {
+                look_ahead = 2;
+            }
+            int look_ahead_idx = path_idx + look_ahead;
             if (look_ahead_idx >= path_len) look_ahead_idx = path_len - 1;
-            int nwx = global_path[look_ahead_idx].x;
-            int nwy = global_path[look_ahead_idx].y;
-            map_to_world(nwx, nwy, &local_goal_x, &local_goal_y);
+
+            // When on the last few waypoints near a table, use the actual target
+            // coordinates instead of the map-quantized waypoint for precision
+            if (near_table && look_ahead_idx >= path_len - 2 && dist_to_final < 0.5) {
+                local_goal_x = target_x;
+                local_goal_y = target_y;
+            } else {
+                int nwx = global_path[look_ahead_idx].x;
+                int nwy = global_path[look_ahead_idx].y;
+                map_to_world(nwx, nwy, &local_goal_x, &local_goal_y);
+            }
 
         } else if (!has_path && target_received) {
-            // Direct mode: vẫn dùng target làm điểm đến
             local_goal_x = target_x;
             local_goal_y = target_y;
         } else {
-            // Idle
             current_v = 0.0;
             current_omega = 0.0;
             wb_motor_set_velocity(left_motor, 0);
@@ -892,7 +1297,8 @@ int main(int argc, char **argv) {
 
         double cmd_v, cmd_omega;
         dwa_control(robot_x, robot_y, robot_theta, local_goal_x, local_goal_y,
-                    lidar_ranges, &cmd_v, &cmd_omega);
+                    lidar_ranges, &cmd_v, &cmd_omega,
+                    dist_to_final, near_table);
         current_v = cmd_v;
         current_omega = cmd_omega;
         double vl, vr;
@@ -906,8 +1312,10 @@ int main(int argc, char **argv) {
 
         static int pc = 0;
         if (pc++ % 15 == 0) {
-            printf("Pos: (%.2f,%.2f) th=%.2f v=%.2f w=%.2f goal=(%.2f,%.2f)\n",
-                   robot_x, robot_y, robot_theta, current_v, current_omega, local_goal_x, local_goal_y);
+            printf("Pos: (%.2f,%.2f) th=%.2f v=%.2f w=%.2f goal=(%.2f,%.2f) final_d=%.3f %s\n",
+                   robot_x, robot_y, robot_theta, current_v, current_omega,
+                   local_goal_x, local_goal_y, dist_to_final,
+                   near_table ? "[TABLE]" : "");
         }
     }
     wb_robot_cleanup();
