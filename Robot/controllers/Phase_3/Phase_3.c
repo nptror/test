@@ -90,10 +90,30 @@ double start_x = 0.0, start_y = 0.0;
 
 double current_v = 0.0, current_omega = 0.0;
 
+// Track current target waypoint name for dynamic stopping
+char current_target_name[64] = "";
+
 WbDeviceTag lidar;
 double lidar_ranges[LIDAR_NUM_SAMPLES];
 Waypoint waypoints[MAX_WAYPOINTS];
 int num_waypoints = 0;
+
+// --- Helper: is current target a Table waypoint? ---
+bool is_table_target(void) {
+    return (strstr(current_target_name, "Table") != NULL ||
+            strstr(current_target_name, "table") != NULL);
+}
+
+// --- Helper: dynamic stopping distance based on target type ---
+double get_stopping_distance(void) {
+    if (is_table_target()) return 0.05;
+    return 0.15;
+}
+
+// --- Helper: check if robot velocity is near zero (DWA has decelerated) ---
+bool is_velocity_near_zero(double vl, double vr) {
+    return (fabs(vl) < 0.01 && fabs(vr) < 0.01);
+}
 
 // ------------------------------------------------------------
 // Heap functions
@@ -284,9 +304,9 @@ void read_robot_command(double *target_x, double *target_y, bool *target_receive
                 *target_received = true;
                 *has_path = false;
                 *state = STATE_RETURN_TO_KITCHEN;
+                strncpy(current_target_name, "robotStart", sizeof(current_target_name) - 1);
                 printf("Command: NAV_TO_TABLE -> START (%.2f, %.2f)\n", *target_x, *target_y);
             } else {
-                // Tìm waypoint có tên khớp với target
                 for (int i = 0; i < num_waypoints; i++) {
                     if (waypoints[i].valid && strcmp(waypoints[i].name, target) == 0) {
                         *target_x = waypoints[i].x;
@@ -294,6 +314,8 @@ void read_robot_command(double *target_x, double *target_y, bool *target_receive
                         *target_received = true;
                         *has_path = false;
                         *state = STATE_NAV_TO_TABLE;
+                        strncpy(current_target_name, waypoints[i].name, sizeof(current_target_name) - 1);
+                        current_target_name[sizeof(current_target_name) - 1] = '\0';
                         printf("Command: NAV_TO_TABLE -> %s (%.2f, %.2f)\n", target, *target_x, *target_y);
                         break;
                     }
@@ -379,17 +401,77 @@ void load_wp(Waypoint *wp, int *cnt) {
 }
 
 // ------------------------------------------------------------
+// Adjust goal cell out of inflation zone along obstacle->goal vector
+// Returns true if adjustment was made
+bool adjust_goal_for_inflation(int *gx, int *gy) {
+    if (is_free(*gx, *gy)) return false;
+
+    // Find the nearest obstacle center by scanning around goal
+    int obs_cx = *gx, obs_cy = *gy;
+    double min_obs_dist = 1e6;
+    int scan_r = 10;
+    for (int dy = -scan_r; dy <= scan_r; dy++) {
+        for (int dx = -scan_r; dx <= scan_r; dx++) {
+            int nx = *gx + dx, ny = *gy + dy;
+            if (nx < 0 || nx >= MAP_SIZE_W || ny < 0 || ny >= MAP_SIZE_H) continue;
+            // Hard obstacle: pixel value near 0
+            if (static_map[ny][nx] < 50) {
+                double d = hypot(dx, dy);
+                if (d < min_obs_dist) {
+                    min_obs_dist = d;
+                    obs_cx = nx;
+                    obs_cy = ny;
+                }
+            }
+        }
+    }
+
+    // Compute direction vector from obstacle center to goal
+    double vx = (double)(*gx - obs_cx);
+    double vy = (double)(*gy - obs_cy);
+    double vlen = hypot(vx, vy);
+    if (vlen < 0.001) {
+        // Goal is right on obstacle center — push in +x direction as fallback
+        vx = 1.0; vy = 0.0; vlen = 1.0;
+    }
+    vx /= vlen;
+    vy /= vlen;
+
+    // Walk outward along the vector 1 pixel at a time until we find a free cell
+    for (int step = 1; step <= 20; step++) {
+        int nx = *gx + (int)(vx * step);
+        int ny = *gy + (int)(vy * step);
+        if (nx < 0 || nx >= MAP_SIZE_W || ny < 0 || ny >= MAP_SIZE_H) continue;
+        if (is_free(nx, ny)) {
+            printf("Goal adjusted from (%d,%d) to (%d,%d) — pushed %d px out of inflation zone\n",
+                   *gx, *gy, nx, ny, step);
+            *gx = nx;
+            *gy = ny;
+            return true;
+        }
+    }
+
+    // Fallback: find nearest free cell (original behavior)
+    return false;
+}
+
+// ------------------------------------------------------------
 // A* planning
 bool plan_path(int sx, int sy, int gx, int gy) {
-    // Tăng bán kính tìm kiếm lên kích thước map để đảm bảo tìm thấy ô trống
-    int search_radius = MAP_SIZE_W; // 400
+    int search_radius = MAP_SIZE_W;
     if (!find_free(&sx, &sy, search_radius)) {
         printf("A* Error: Cannot find free cell near start!\n");
         return false;
     }
-    if (!find_free(&gx, &gy, search_radius)) {
-        printf("A* Error: Cannot find free cell near goal!\n");
-        return false;
+    // For goal: try directional adjustment first (preserves approach vector),
+    // then fall back to nearest free cell
+    if (!is_free(gx, gy)) {
+        if (!adjust_goal_for_inflation(&gx, &gy)) {
+            if (!find_free(&gx, &gy, search_radius)) {
+                printf("A* Error: Cannot find free cell near goal!\n");
+                return false;
+            }
+        }
     }
 
     for (int y = 0; y < MAP_SIZE_H; y++) {
@@ -455,8 +537,11 @@ bool plan_path(int sx, int sy, int gx, int gy) {
 
 // ------------------------------------------------------------
 // DWA evaluation
+// dist_to_final_goal: distance from robot to final target (not local waypoint)
+// near_table: true when destination is a Table waypoint
 double evaluate_trajectory(double v, double omega, double robot_x, double robot_y, double robot_theta,
-                           double goal_x, double goal_y, double *lidar_ranges) {
+                           double goal_x, double goal_y, double *lidar_ranges,
+                           double dist_to_final_goal, bool near_table) {
     double x = robot_x, y = robot_y, th = robot_theta;
     int steps = (int)(PREDICT_TIME / DT);
     bool collision = false;
@@ -473,6 +558,7 @@ double evaluate_trajectory(double v, double omega, double robot_x, double robot_
     }
     if (collision) return 1e6;
 
+    // Clearance: minimum distance to obstacles along predicted path
     double clearance = LIDAR_MAX_RANGE;
     double step_dist = 0.05;
     double path_length = v * PREDICT_TIME;
@@ -496,8 +582,18 @@ double evaluate_trajectory(double v, double omega, double robot_x, double robot_
         }
         if (min_d < clearance) clearance = min_d;
     }
-    if (clearance < 0.05) return 1e6;
 
+    // Hard clearance threshold — relaxed when approaching a table at close range
+    double min_clearance = OBSTACLE_MARGIN; // default 0.15m
+    if (near_table && dist_to_final_goal < 0.5) {
+        // Close to table delivery point: allow robot to come within 3cm of obstacles
+        min_clearance = 0.03;
+    } else if (near_table && dist_to_final_goal < 1.0) {
+        min_clearance = 0.08;
+    }
+    if (clearance < min_clearance) return 1e6;
+
+    // Goal heading cost
     double dx_goal = goal_x - x;
     double dy_goal = goal_y - y;
     double goal_dir = atan2(dy_goal, dx_goal);
@@ -509,14 +605,45 @@ double evaluate_trajectory(double v, double omega, double robot_x, double robot_
     double vel_cost = 1.0 - (v / MAX_SPEED);
     double clearance_cost = 1.0 - (clearance / LIDAR_MAX_RANGE);
 
-    return HEADING_GAIN * heading_cost + CLEARANCE_GAIN * clearance_cost + VEL_GAIN * vel_cost;
+    // Distance to goal cost — reward trajectories that end closer to the target
+    double end_dist = hypot(goal_x - x, goal_y - y);
+    double dist_cost = end_dist / 3.0; // normalize by reasonable range
+
+    // Dynamic weight adjustment based on proximity to table target
+    double w_heading = HEADING_GAIN;    // 0.5
+    double w_clearance = CLEARANCE_GAIN; // 0.25
+    double w_vel = VEL_GAIN;            // 0.25
+    double w_dist = 0.0;
+
+    if (near_table && dist_to_final_goal < 1.0) {
+        // Near table: prioritize reaching the goal over obstacle avoidance
+        w_heading = 0.8;
+        w_clearance = 0.05;
+        w_vel = 0.05;
+        w_dist = 0.6;
+    } else if (near_table && dist_to_final_goal < 2.0) {
+        w_heading = 0.6;
+        w_clearance = 0.15;
+        w_vel = 0.15;
+        w_dist = 0.3;
+    }
+
+    return w_heading * heading_cost + w_clearance * clearance_cost
+         + w_vel * vel_cost + w_dist * dist_cost;
 }
 
 void dwa_control(double robot_x, double robot_y, double robot_theta,
                  double goal_x, double goal_y, double *lidar_ranges,
-                 double *out_v, double *out_omega) {
+                 double *out_v, double *out_omega,
+                 double dist_to_final_goal, bool near_table) {
     double min_v = fmax(0.1, current_v - MAX_ACCEL * TIME_STEP / 1000.0);
     double max_v = fmin(MAX_SPEED, current_v + MAX_ACCEL * TIME_STEP / 1000.0);
+
+    // When very close to a table target, allow lower min velocity for fine approach
+    if (near_table && dist_to_final_goal < 0.3) {
+        min_v = fmax(0.02, current_v - MAX_ACCEL * TIME_STEP / 1000.0);
+    }
+
     double min_omega = fmax(-MAX_OMEGA, current_omega - MAX_OMEGA_ACCEL * TIME_STEP / 1000.0);
     double max_omega = fmin(MAX_OMEGA, current_omega + MAX_OMEGA_ACCEL * TIME_STEP / 1000.0);
 
@@ -528,7 +655,8 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
         for (int j = 0; j <= OMEGA_SAMPLES; j++) {
             double omega = min_omega + (max_omega - min_omega) * j / OMEGA_SAMPLES;
             double cost = evaluate_trajectory(v, omega, robot_x, robot_y, robot_theta,
-                                               goal_x, goal_y, lidar_ranges);
+                                               goal_x, goal_y, lidar_ranges,
+                                               dist_to_final_goal, near_table);
             if (cost >= 0 && cost < best_cost) {
                 best_cost = cost;
                 best_v = v;
@@ -743,6 +871,8 @@ int main(int argc, char **argv) {
                 target_received = true;
                 has_path = false;
                 robot_state = STATE_NAV_TO_TABLE;
+                strncpy(current_target_name, waypoints[idx].name, sizeof(current_target_name) - 1);
+                current_target_name[sizeof(current_target_name) - 1] = '\0';
                 printf("Go to %s: (%.2f, %.2f)\n", waypoints[idx].name, target_x, target_y);
             } else if (num_waypoints == 0 && (key == '1' || key == '2')) {
                 target_x = (key == '1') ? robot_x : -0.8;
@@ -756,14 +886,14 @@ int main(int argc, char **argv) {
 
         // Global path planning
         if (target_received && !has_path) {
-            // --- Kiểm tra: robot đã ở gần đích chưa? ---
             double dist_to_goal = hypot(target_x - robot_x, target_y - robot_y);
-            if (dist_to_goal < WAYPOINT_ACCEPT_DIST) {
-                // Đã ở tại đích, không cần A*
+            double stop_dist = get_stopping_distance();
+            if (dist_to_goal < stop_dist) {
                 target_received = false;
                 has_path = false;
                 robot_state = STATE_IDLE;
-                printf("\n========== ARRIVED (already at goal) ==========\n");
+                printf("\n========== ARRIVED (already at goal, d=%.3f < %.3f) ==========\n",
+                       dist_to_goal, stop_dist);
                 current_v = 0.0; current_omega = 0.0;
                 wb_motor_set_velocity(left_motor, 0.0);
                 wb_motor_set_velocity(right_motor, 0.0);
@@ -799,6 +929,12 @@ int main(int argc, char **argv) {
         }
 
         // ============================================================
+        // Distance to FINAL target (for dynamic stopping & DWA tuning)
+        double dist_to_final = hypot(target_x - robot_x, target_y - robot_y);
+        double stop_dist = get_stopping_distance();
+        bool near_table = is_table_target();
+
+        // ============================================================
         // Xác định local_goal và cập nhật waypoint
         double local_goal_x = target_x, local_goal_y = target_y;
         if (has_path && path_idx < path_len) {
@@ -808,24 +944,46 @@ int main(int argc, char **argv) {
             map_to_world(wx, wy, &current_wp_x, &current_wp_y);
             double dist_to_current = hypot(current_wp_x - robot_x, current_wp_y - robot_y);
 
-            if (dist_to_current < WAYPOINT_ACCEPT_DIST) {
-                if (path_idx < path_len - 1) {
-                    path_idx++;
-                    continue;
-                } else {
+            // For intermediate waypoints: use generous accept distance
+            // For the LAST waypoint: use dynamic stopping distance
+            bool is_last_wp = (path_idx >= path_len - 1);
+            double wp_accept = is_last_wp ? stop_dist : WAYPOINT_ACCEPT_DIST;
+
+            // Table final arrival: also check velocity (DWA deceleration)
+            bool velocity_stopped = is_velocity_near_zero(current_v, current_omega);
+            bool final_arrived = false;
+
+            if (is_last_wp) {
+                if (dist_to_final < stop_dist) {
+                    final_arrived = true;
+                } else if (near_table && dist_to_final < 0.15 && velocity_stopped) {
+                    // DWA has decelerated to near-zero near a table — accept arrival
+                    final_arrived = true;
+                    printf("Table arrival: DWA decelerated, d=%.3f v=%.4f\n",
+                           dist_to_final, current_v);
+                }
+            }
+
+            if (dist_to_current < wp_accept || final_arrived) {
+                if (is_last_wp || final_arrived) {
                     has_path = false;
                     target_received = false;
                     robot_state = STATE_IDLE;
-                    printf("\n========== ARRIVED ==========\n");
+                    printf("\n========== ARRIVED (d=%.3f, threshold=%.3f) ==========\n",
+                           dist_to_final, stop_dist);
                     current_v = 0;
                     current_omega = 0;
                     wb_motor_set_velocity(left_motor, 0);
                     wb_motor_set_velocity(right_motor, 0);
                     write_robot_state(robot_x, robot_y, robot_theta, 0.0, 0.0, get_state_string(robot_state));
                     continue;
+                } else {
+                    path_idx++;
+                    continue;
                 }
             }
 
+            // Segment-based advancement for intermediate waypoints only
             bool should_advance = false;
             if (path_idx < path_len - 1) {
                 int next_wx = global_path[path_idx + 1].x;
@@ -843,42 +1001,39 @@ int main(int argc, char **argv) {
                         should_advance = true;
                     }
                 }
-            } else {
-                if (dist_to_current < WAYPOINT_ACCEPT_DIST * 1.5) {
-                    should_advance = true;
-                }
             }
 
-            if (should_advance) {
-                if (path_idx < path_len - 1) {
-                    path_idx++;
-                    continue;
-                } else {
-                    has_path = false;
-                    target_received = false;
-                    robot_state = STATE_IDLE;
-                    printf("\n========== ARRIVED ==========\n");
-                    current_v = 0;
-                    current_omega = 0;
-                    wb_motor_set_velocity(left_motor, 0);
-                    wb_motor_set_velocity(right_motor, 0);
-                    write_robot_state(robot_x, robot_y, robot_theta, 0.0, 0.0, get_state_string(robot_state));
-                    continue;
-                }
+            if (should_advance && path_idx < path_len - 1) {
+                path_idx++;
+                continue;
             }
 
-            int look_ahead_idx = path_idx + 4;
+            // Look-ahead: when close to final target on a table, reduce look-ahead
+            // so DWA aims precisely at the delivery pin
+            int look_ahead = 4;
+            if (near_table && dist_to_final < 0.5) {
+                look_ahead = 1;
+            } else if (near_table && dist_to_final < 1.0) {
+                look_ahead = 2;
+            }
+            int look_ahead_idx = path_idx + look_ahead;
             if (look_ahead_idx >= path_len) look_ahead_idx = path_len - 1;
-            int nwx = global_path[look_ahead_idx].x;
-            int nwy = global_path[look_ahead_idx].y;
-            map_to_world(nwx, nwy, &local_goal_x, &local_goal_y);
+
+            // When on the last few waypoints near a table, use the actual target
+            // coordinates instead of the map-quantized waypoint for precision
+            if (near_table && look_ahead_idx >= path_len - 2 && dist_to_final < 0.5) {
+                local_goal_x = target_x;
+                local_goal_y = target_y;
+            } else {
+                int nwx = global_path[look_ahead_idx].x;
+                int nwy = global_path[look_ahead_idx].y;
+                map_to_world(nwx, nwy, &local_goal_x, &local_goal_y);
+            }
 
         } else if (!has_path && target_received) {
-            // Direct mode: vẫn dùng target làm điểm đến
             local_goal_x = target_x;
             local_goal_y = target_y;
         } else {
-            // Idle
             current_v = 0.0;
             current_omega = 0.0;
             wb_motor_set_velocity(left_motor, 0);
@@ -892,7 +1047,8 @@ int main(int argc, char **argv) {
 
         double cmd_v, cmd_omega;
         dwa_control(robot_x, robot_y, robot_theta, local_goal_x, local_goal_y,
-                    lidar_ranges, &cmd_v, &cmd_omega);
+                    lidar_ranges, &cmd_v, &cmd_omega,
+                    dist_to_final, near_table);
         current_v = cmd_v;
         current_omega = cmd_omega;
         double vl, vr;
@@ -906,8 +1062,10 @@ int main(int argc, char **argv) {
 
         static int pc = 0;
         if (pc++ % 15 == 0) {
-            printf("Pos: (%.2f,%.2f) th=%.2f v=%.2f w=%.2f goal=(%.2f,%.2f)\n",
-                   robot_x, robot_y, robot_theta, current_v, current_omega, local_goal_x, local_goal_y);
+            printf("Pos: (%.2f,%.2f) th=%.2f v=%.2f w=%.2f goal=(%.2f,%.2f) final_d=%.3f %s\n",
+                   robot_x, robot_y, robot_theta, current_v, current_omega,
+                   local_goal_x, local_goal_y, dist_to_final,
+                   near_table ? "[TABLE]" : "");
         }
     }
     wb_robot_cleanup();
