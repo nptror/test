@@ -1,0 +1,4 @@
+Phase_3.c: In function 'load_wp':
+Phase_3.c:350:13: warning: 'strncpy' output may be truncated copying 63 bytes from a string of length 63 [-Wstringop-truncation]
+  350 |             strncpy(wp[*cnt].name, name, sizeof(wp[*cnt].name) - 1);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

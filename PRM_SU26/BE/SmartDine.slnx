@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="SmartDine.API/SmartDine.API.csproj" />
+  <Project Path="SmartDine.Application/SmartDine.Application.csproj" />
+  <Project Path="SmartDine.Domain/SmartDine.Domain.csproj" />
+  <Project Path="SmartDine.Infrastructure/SmartDine.Infrastructure.csproj" />
+  <Project Path="SmartDine.Tests/SmartDine.Tests.csproj" />
+</Solution>

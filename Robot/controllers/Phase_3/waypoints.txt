@@ -1,0 +1,6 @@
+Kitchen_kitchen-106: -6.80 -7.88
+Table_101: 0.01 5.84
+Table_102: 0.31 -2.10
+Table_103: 1.20 5.68
+Table_104: 1.26 -1.07
+RobotStart_robotStart-118: 0.05 1.00

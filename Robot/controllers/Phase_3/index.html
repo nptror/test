@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Robot Restaurant Map Designer | Fixed Map + Draggable Delivery Points</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Roboto', monospace;
+            background: #1a1b26;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .toolbar {
+            background: #242533;
+            padding: 10px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            border-bottom: 2px solid #3b3d4f;
+            z-index: 10;
+        }
+
+        .tool-btn {
+            background: #323544;
+            border: none;
+            color: #eef;
+            padding: 8px 18px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: 0.2s;
+            font-family: monospace;
+        }
+
+        .tool-btn.active {
+            background: #4a6fa5;
+            box-shadow: inset 0 0 5px #1e2f3f;
+            border-left: 2px solid #8ab3e0;
+        }
+
+        .tool-btn:hover {
+            background: #4e5168;
+            transform: translateY(-1px);
+        }
+
+        .tool-btn.export {
+            background: #2c5a2e;
+        }
+
+        .tool-btn.export:hover {
+            background: #3f7842;
+        }
+
+        .tool-btn.validate {
+            background: #b45f2e;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .canvas-container {
+            flex: 1;
+            background: #20212b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: auto;
+        }
+
+        canvas {
+            display: block;
+            background: #665f47;
+            cursor: crosshair;
+            box-shadow: 0 0 0 2px #3b3d4f;
+            width: 400px;
+            height: 400px;
+        }
+
+        .property-panel {
+            width: 280px;
+            background: #242533;
+            border-left: 2px solid #3b3d4f;
+            padding: 20px 16px;
+            color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        .prop-title {
+            font-size: 18px;
+            font-weight: bold;
+            border-bottom: 2px solid #4a6fa5;
+            padding-bottom: 8px;
+        }
+
+        .prop-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .prop-field {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .prop-field label {
+            font-weight: 500;
+            font-size: 13px;
+        }
+
+        .prop-field input,
+        .prop-field span {
+            background: #1a1b26;
+            border: 1px solid #4e5168;
+            padding: 6px 8px;
+            border-radius: 6px;
+            color: white;
+            width: 130px;
+            font-family: monospace;
+        }
+
+        .no-selection {
+            color: #aaa;
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+        }
+
+        .info-note {
+            font-size: 11px;
+            background: #1a1b26;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            margin-top: 16px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="toolbar">
+        <button class="tool-btn" data-tool="select">?? SELECT</button>
+        <button class="tool-btn" data-tool="wall">?? WALL</button>
+        <button class="tool-btn" data-tool="table">?? TABLE</button>
+        <button class="tool-btn" data-tool="kitchen">?? KITCHEN</button>
+        <button class="tool-btn" data-tool="delivery">?? DELIVERY</button>
+        <button class="tool-btn" data-tool="start">?? START</button>
+        <div style="width:1px; background:#555; margin:0 6px;"></div>
+        <button class="tool-btn export" id="exportJsonBtn">?? JSON</button>
+        <button class="tool-btn export" id="exportPgmBtn">??? PGM</button>
+        <button class="tool-btn export" id="exportWaypointsBtn">?? WAYPOINTS</button>
+        <button class="tool-btn validate" id="validatePathBtn">? VALIDATE A*</button>
+    </div>
+
+    <div class="main-container">
+        <div class="canvas-container">
+            <canvas id="mapCanvas" width="400" height="400"></canvas>
+        </div>
+        <div class="property-panel" id="propertyPanel">
+            <div class="prop-title">?? OBJECT PROPERTIES</div>
+            <div id="propContent">
+                <div class="no-selection">? No object selected<br>Click with SELECT tool</div>
+            </div>
+            <div class="info-note">
+                ??? Fixed map view (no zoom/pan)<br>
+                ??? Delete: Press DELETE key<br>
+                ?? Map boundary: ±10 meters (400x400 pixels)<br>
+                ? Green dot = robot stop position for each table (draggable with SELECT tool)<br>
+                ?? Waypoints export uses exact green dot coordinates (meters, Y up)
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // 1. CONSTANTS & COORDINATE UTILITIES (fixed map, no camera)
+        // ============================================================
+        const MAP_SIZE = 400;            // pixels
+        const MAP_RESOLUTION = 0.05;     // meters per pixel
+        const MAP_CENTER = 200;          // pixel center (world 0,0)
+        const WORLD_MIN = -MAP_CENTER * MAP_RESOLUTION;   // -10m
+        const WORLD_MAX = MAP_CENTER * MAP_RESOLUTION;     // +10m
+
+        const FREE = 255;
+        const OBSTACLE = 0;
+
+        function worldToPixel(worldX, worldY) {
+            return {
+                x: MAP_CENTER + (worldX / MAP_RESOLUTION),
+                y: MAP_CENTER - (worldY / MAP_RESOLUTION)
+            };
+        }
+
+        function pixelToWorld(px, py) {
+            return {
+                x: (px - MAP_CENTER) * MAP_RESOLUTION,
+                y: (MAP_CENTER - py) * MAP_RESOLUTION
+            };
+        }
+
+        // ============================================================
+        // 2. APPLICATION STATE (ALL WORLD COORDINATES)
+        // ============================================================
+        let walls = [];
+        let tables = [];
+        let kitchens = [];
+        let deliveryPoints = [];
+        let startPosition = null;
+
+        let activeTool = "select";
+        let selectedObject = null;
+
+        // Drag state for SELECT tool
+        let isDragging = false;
+        let isDraggingDeliveryPoint = false;   // dragging green dot of a table
+        let dragStartWorld = null;
+
+        const canvas = document.getElementById('mapCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // ============================================================
+        // 3. OBJECT MANAGEMENT (with delivery offsets for tables)
+        // ============================================================
+        function generateTableName() {
+            const numbers = tables.map(t => {
+                const m = t.name.match(/Table_(\d+)/);
+                return m ? parseInt(m[1]) : 0;
+            });
+            const maxNum = numbers.length ? Math.max(...numbers) : 0;
+            return `Table_${maxNum + 1}`;
+        }
+
+        function addTable(worldX, worldY) {
+            worldX = Math.min(WORLD_MAX - 0.25, Math.max(WORLD_MIN + 0.25, worldX));
+            worldY = Math.min(WORLD_MAX - 0.25, Math.max(WORLD_MIN + 0.25, worldY));
+            const newTable = {
+                id: 't_' + Date.now() + '_' + Math.random(),
+                name: generateTableName(),
+                x: worldX - 0.25,
+                y: worldY - 0.25,
+                width: 0.5,
+                height: 0.5,
+                // delivery offset in meters from table center (default: bottom center)
+                deliveryOffsetX: 0,
+                deliveryOffsetY: 0.25
+            };
+            tables.push(newTable);
+            renderCanvas();
+            return newTable;
+        }
+
+        function addKitchen(worldX, worldY) {
+            worldX = Math.min(WORLD_MAX - 0.3, Math.max(WORLD_MIN + 0.3, worldX));
+            worldY = Math.min(WORLD_MAX - 0.3, Math.max(WORLD_MIN + 0.3, worldY));
+            kitchens.push({
+                id: 'k_' + Date.now(),
+                x: worldX - 0.3,
+                y: worldY - 0.3,
+                width: 0.6,
+                height: 0.6
+            });
+            renderCanvas();
+        }
+
+        function addDeliveryPoint(worldX, worldY) {
+            worldX = Math.min(WORLD_MAX - 0.25, Math.max(WORLD_MIN + 0.25, worldX));
+            worldY = Math.min(WORLD_MAX - 0.25, Math.max(WORLD_MIN + 0.25, worldY));
+            deliveryPoints.push({
+                id: 'dp_' + Date.now(),
+                x: worldX - 0.25,
+                y: worldY - 0.25,
+                width: 0.5,
+                height: 0.5
+            });
+            renderCanvas();
+        }
+
+        function setStartPosition(worldX, worldY) {
+            worldX = Math.min(WORLD_MAX - 0.2, Math.max(WORLD_MIN + 0.2, worldX));
+            worldY = Math.min(WORLD_MAX - 0.2, Math.max(WORLD_MIN + 0.2, worldY));
+            startPosition = {
+                x: worldX - 0.2,
+                y: worldY - 0.2,
+                width: 0.4,
+                height: 0.4
+            };
+            renderCanvas();
+        }
+
+        function addWallRect(worldStart, worldEnd) {
+            let x1 = Math.min(worldStart.x, worldEnd.x);
+            let y1 = Math.min(worldStart.y, worldEnd.y);
+            let x2 = Math.max(worldStart.x, worldEnd.x);
+            let y2 = Math.max(worldStart.y, worldEnd.y);
+            x1 = Math.max(WORLD_MIN, x1);
+            y1 = Math.max(WORLD_MIN, y1);
+            x2 = Math.min(WORLD_MAX, x2);
+            y2 = Math.min(WORLD_MAX, y2);
+            const width = x2 - x1;
+            const height = y2 - y1;
+            if (width < 0.05 || height < 0.05) return;
+            walls.push({
+                id: 'wall_' + Date.now() + '_' + Math.random(),
+                x: x1, y: y1,
+                width: width, height: height
+            });
+            renderCanvas();
+        }
+
+        function deleteSelected() {
+            if (!selectedObject) return;
+            const { type, id } = selectedObject;
+            if (type === 'wall') walls = walls.filter(w => w.id !== id);
+            else if (type === 'table') tables = tables.filter(t => t.id !== id);
+            else if (type === 'kitchen') kitchens = kitchens.filter(k => k.id !== id);
+            else if (type === 'delivery') deliveryPoints = deliveryPoints.filter(d => d.id !== id);
+            else if (type === 'start') startPosition = null;
+            selectedObject = null;
+            updatePropertyPanel();
+            renderCanvas();
+        }
+
+        function moveSelectedObject(dx, dy) {
+            if (!selectedObject) return;
+            let newX = selectedObject.ref.x + dx;
+            let newY = selectedObject.ref.y + dy;
+            newX = Math.min(WORLD_MAX - selectedObject.ref.width, Math.max(WORLD_MIN, newX));
+            newY = Math.min(WORLD_MAX - selectedObject.ref.height, Math.max(WORLD_MIN, newY));
+            selectedObject.ref.x = newX;
+            selectedObject.ref.y = newY;
+            renderCanvas();
+            updatePropertyPanel();
+        }
+
+        // Helper: get the world coordinates of a table's delivery point
+        function getTableDeliveryPoint(table) {
+            const centerX = table.x + table.width / 2;
+            const centerY = table.y + table.height / 2;
+            return {
+                x: centerX + (table.deliveryOffsetX || 0),
+                y: centerY + (table.deliveryOffsetY || 0.25)
+            };
+        }
+
+        // Hit test for green dot (priority over table body)
+        function hitTestDeliveryPoint(worldX, worldY, threshold = 0.1) {
+            for (let table of tables) {
+                const dp = getTableDeliveryPoint(table);
+                const dx = dp.x - worldX;
+                const dy = dp.y - worldY;
+                if (Math.hypot(dx, dy) <= threshold) {
+                    return { type: 'table', ref: table, id: table.id, isDeliveryPoint: true };
+                }
+            }
+            return null;
+        }
+
+        function hitTestObjects(worldX, worldY) {
+            // first, check green dots (higher priority for dragging)
+            const deliveryHit = hitTestDeliveryPoint(worldX, worldY);
+            if (deliveryHit) return deliveryHit;
+
+            for (let w of walls) {
+                if (worldX >= w.x && worldX <= w.x + w.width && worldY >= w.y && worldY <= w.y + w.height)
+                    return { type: 'wall', ref: w, id: w.id };
+            }
+            for (let t of tables) {
+                if (worldX >= t.x && worldX <= t.x + t.width && worldY >= t.y && worldY <= t.y + t.height)
+                    return { type: 'table', ref: t, id: t.id };
+            }
+            for (let k of kitchens) {
+                if (worldX >= k.x && worldX <= k.x + k.width && worldY >= k.y && worldY <= k.y + k.height)
+                    return { type: 'kitchen', ref: k, id: k.id };
+            }
+            for (let d of deliveryPoints) {
+                if (worldX >= d.x && worldX <= d.x + d.width && worldY >= d.y && worldY <= d.y + d.height)
+                    return { type: 'delivery', ref: d, id: d.id };
+            }
+            if (startPosition && worldX >= startPosition.x && worldX <= startPosition.x + startPosition.width &&
+                worldY >= startPosition.y && worldY <= startPosition.y + startPosition.height) {
+                return { type: 'start', ref: startPosition, id: 'start' };
+            }
+            return null;
+        }
+
+        // ============================================================
+        // 4. PROPERTY PANEL
+        // ============================================================
+        function updatePropertyPanel() {
+            const container = document.getElementById('propContent');
+            if (!selectedObject) {
+                container.innerHTML = '<div class="no-selection">? No object selected<br>Click with SELECT tool</div>';
+                return;
+            }
+            const { type, ref } = selectedObject;
+            let displayName = '';
+            if (type === 'table') displayName = ref.name;
+            else if (type === 'wall') displayName = 'Wall';
+            else if (type === 'kitchen') displayName = 'Kitchen';
+            else if (type === 'delivery') displayName = 'Delivery Point';
+            else if (type === 'start') displayName = 'Start Position';
+
+            container.innerHTML = `
+            <div class="prop-group">
+                <div class="prop-field"><label>Name:</label><input type="text" id="propName" value="${escapeHtml(displayName)}" ${type !== 'table' ? 'disabled' : ''}></div>
+                <div class="prop-field"><label>Type:</label><span>${type.toUpperCase()}</span></div>
+                <div class="prop-field"><label>X (m):</label><input type="number" step="0.05" id="propX" value="${ref.x.toFixed(3)}"></div>
+                <div class="prop-field"><label>Y (m):</label><input type="number" step="0.05" id="propY" value="${ref.y.toFixed(3)}"></div>
+                <div class="prop-field"><label>Width (m):</label><input type="number" step="0.05" id="propW" value="${ref.width.toFixed(3)}"></div>
+                <div class="prop-field"><label>Height (m):</label><input type="number" step="0.05" id="propH" value="${ref.height.toFixed(3)}"></div>
+            </div>
+        `;
+            const nameInp = document.getElementById('propName');
+            const xInp = document.getElementById('propX');
+            const yInp = document.getElementById('propY');
+            const wInp = document.getElementById('propW');
+            const hInp = document.getElementById('propH');
+
+            const updateFromPanel = () => {
+                if (!selectedObject) return;
+                let newX = parseFloat(xInp.value);
+                let newY = parseFloat(yInp.value);
+                let newW = parseFloat(wInp.value);
+                let newH = parseFloat(hInp.value);
+                if (!isNaN(newX)) newX = Math.min(WORLD_MAX - ref.width, Math.max(WORLD_MIN, newX));
+                if (!isNaN(newY)) newY = Math.min(WORLD_MAX - ref.height, Math.max(WORLD_MIN, newY));
+                if (!isNaN(newW) && newW > 0) ref.width = newW;
+                if (!isNaN(newH) && newH > 0) ref.height = newH;
+                if (!isNaN(newX)) ref.x = newX;
+                if (!isNaN(newY)) ref.y = newY;
+                if (type === 'table' && nameInp && !nameInp.disabled) ref.name = nameInp.value;
+                renderCanvas();
+            };
+            if (xInp) xInp.addEventListener('change', updateFromPanel);
+            if (yInp) yInp.addEventListener('change', updateFromPanel);
+            if (wInp) wInp.addEventListener('change', updateFromPanel);
+            if (hInp) hInp.addEventListener('change', updateFromPanel);
+            if (nameInp && !nameInp.disabled) nameInp.addEventListener('change', updateFromPanel);
+        }
+
+        function escapeHtml(str) { return str.replace(/[&<>]/g, function (m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); }
+
+        // ============================================================
+        // 5. OCCUPANCY GRID BUILDER (for PGM & A*)
+        // ============================================================
+        function buildOccupancyGrid() {
+            let grid = Array(MAP_SIZE).fill().map(() => Array(MAP_SIZE).fill(FREE));
+
+            function markObstacle(worldX, worldY, worldW, worldH) {
+                const startCol = Math.max(0, Math.floor((worldX / MAP_RESOLUTION) + MAP_CENTER));
+                const endCol = Math.min(MAP_SIZE - 1, Math.floor(((worldX + worldW) / MAP_RESOLUTION) + MAP_CENTER));
+                const startRow = Math.max(0, Math.floor(MAP_CENTER - ((worldY + worldH) / MAP_RESOLUTION)));
+                const endRow = Math.min(MAP_SIZE - 1, Math.floor(MAP_CENTER - (worldY / MAP_RESOLUTION)));
+                for (let i = startRow; i <= endRow; i++) {
+                    for (let j = startCol; j <= endCol; j++) {
+                        if (i >= 0 && i < MAP_SIZE && j >= 0 && j < MAP_SIZE) grid[i][j] = OBSTACLE;
+                    }
+                }
+            }
+
+            for (let w of walls) markObstacle(w.x, w.y, w.width, w.height);
+            for (let t of tables) markObstacle(t.x, t.y, t.width, t.height);
+            for (let k of kitchens) markObstacle(k.x, k.y, k.width, k.height);
+            // Delivery points and start area remain free
+            return grid;
+        }
+
+        // ============================================================
+        // 6. A* PATHFINDING (using delivery points as goals)
+        // ============================================================
+        function heuristic(ar, ac, br, bc) { return Math.hypot(ar - br, ac - bc); }
+
+        function findNearestFreeCell(worldX, worldY, occupancyGrid) {
+            const startCol = Math.floor((worldX / MAP_RESOLUTION) + MAP_CENTER);
+            const startRow = Math.floor(MAP_CENTER - (worldY / MAP_RESOLUTION));
+            if (startRow >= 0 && startRow < MAP_SIZE && startCol >= 0 && startCol < MAP_SIZE &&
+                occupancyGrid[startRow][startCol] === FREE) {
+                return { row: startRow, col: startCol };
+            }
+            const queue = [{ row: startRow, col: startCol }];
+            const visited = new Set();
+            while (queue.length) {
+                const { row, col } = queue.shift();
+                if (row < 0 || row >= MAP_SIZE || col < 0 || col >= MAP_SIZE) continue;
+                const key = `${row},${col}`;
+                if (visited.has(key)) continue;
+                visited.add(key);
+                if (occupancyGrid[row][col] === FREE) return { row, col };
+                for (let dr = -1; dr <= 1; dr++) {
+                    for (let dc = -1; dc <= 1; dc++) {
+                        if (dr === 0 && dc === 0) continue;
+                        queue.push({ row: row + dr, col: col + dc });
+                    }
+                }
+            }
+            return null;
+        }
+
+        async function findPathAStar(startWorld, goalWorld, occupancyGrid) {
+            function worldToGrid(wx, wy) {
+                const col = Math.floor((wx / MAP_RESOLUTION) + MAP_CENTER);
+                const row = Math.floor(MAP_CENTER - (wy / MAP_RESOLUTION));
+                return { row, col };
+            }
+            let startGrid = worldToGrid(startWorld.x, startWorld.y);
+            if (startGrid.row < 0 || startGrid.row >= MAP_SIZE || startGrid.col < 0 || startGrid.col >= MAP_SIZE) return null;
+            if (occupancyGrid[startGrid.row][startGrid.col] === OBSTACLE) return null;
+
+            let goalGrid = worldToGrid(goalWorld.x, goalWorld.y);
+            if (occupancyGrid[goalGrid.row][goalGrid.col] !== FREE) {
+                const nearest = findNearestFreeCell(goalWorld.x, goalWorld.y, occupancyGrid);
+                if (!nearest) return null;
+                goalGrid = nearest;
+            }
+
+            const openSet = [{ row: startGrid.row, col: startGrid.col, g: 0, f: heuristic(startGrid.row, startGrid.col, goalGrid.row, goalGrid.col) }];
+            const cameFrom = new Map();
+            const gScore = new Map();
+            const key = (r, c) => `${r},${c}`;
+            gScore.set(key(startGrid.row, startGrid.col), 0);
+
+            while (openSet.length) {
+                openSet.sort((a, b) => a.f - b.f);
+                const current = openSet.shift();
+                if (current.row === goalGrid.row && current.col === goalGrid.col) {
+                    const path = [];
+                    let cur = current;
+                    while (cur) {
+                        path.unshift({ row: cur.row, col: cur.col });
+                        const prev = cameFrom.get(key(cur.row, cur.col));
+                        if (!prev) break;
+                        cur = prev;
+                    }
+                    return path.map(p => {
+                        const wx = (p.col - MAP_CENTER) * MAP_RESOLUTION;
+                        const wy = (MAP_CENTER - p.row) * MAP_RESOLUTION;
+                        return { x: wx, y: wy };
+                    });
+                }
+                const neighbors = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [-1, 1], [1, -1], [1, 1]];
+                for (let [dr, dc] of neighbors) {
+                    const nr = current.row + dr, nc = current.col + dc;
+                    if (nr < 0 || nr >= MAP_SIZE || nc < 0 || nc >= MAP_SIZE) continue;
+                    if (occupancyGrid[nr][nc] === OBSTACLE) continue;
+                    const stepCost = (dr !== 0 && dc !== 0) ? Math.sqrt(2) : 1;
+                    const tentativeG = gScore.get(key(current.row, current.col)) + stepCost;
+                    const prevG = gScore.get(key(nr, nc));
+                    if (prevG === undefined || tentativeG < prevG) {
+                        gScore.set(key(nr, nc), tentativeG);
+                        const h = heuristic(nr, nc, goalGrid.row, goalGrid.col);
+                        cameFrom.set(key(nr, nc), current);
+                        if (!openSet.some(p => p.row === nr && p.col === nc)) {
+                            openSet.push({ row: nr, col: nc, g: tentativeG, f: tentativeG + h });
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        async function validateAllPaths() {
+            if (!startPosition) { alert("?? Please set a Start Position first!"); return false; }
+            if (tables.length === 0) { alert("?? No tables placed!"); return false; }
+            const grid = buildOccupancyGrid();
+            const startCenter = { x: startPosition.x + startPosition.width / 2, y: startPosition.y + startPosition.height / 2 };
+
+            const startPx = worldToPixel(startCenter.x, startCenter.y);
+            const startCol = Math.floor(startPx.x);
+            const startRow = Math.floor(startPx.y);
+            if (startRow >= 0 && startRow < MAP_SIZE && startCol >= 0 && startCol < MAP_SIZE && grid[startRow][startCol] === OBSTACLE) {
+                alert("? START POSITION is inside an obstacle (wall/table/kitchen). Move it to free space.");
+                return false;
+            }
+
+            let allSuccess = true;
+            let firstPath = null;
+            let firstTable = null;
+
+            for (let tbl of tables) {
+                const goal = getTableDeliveryPoint(tbl);   // use green dot as goal
+                const path = await findPathAStar(startCenter, goal, grid);
+                if (!path) {
+                    allSuccess = false;
+                    alert(`? NO PATH FOUND to ${tbl.name} (delivery point). Check if the green dot is blocked or start is isolated.`);
+                    break;
+                }
+                if (firstPath === null) {
+                    firstPath = path;
+                    firstTable = tbl;
+                }
+            }
+            if (allSuccess) {
+                alert(`? PATH FOUND to all tables! Drawing route to ${firstTable?.name || "first table"}`);
+                renderCanvas();
+                if (firstPath) drawPathOnCanvas(firstPath);
+                return true;
+            } else {
+                renderCanvas();
+                return false;
+            }
+        }
+
+        function drawPathOnCanvas(pathPoints) {
+            if (!pathPoints || pathPoints.length < 2) return;
+            ctx.save();
+            ctx.beginPath();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = "#e34234";
+            ctx.shadowBlur = 0;
+            ctx.lineJoin = "round";
+            for (let i = 0; i < pathPoints.length; i++) {
+                const pixel = worldToPixel(pathPoints[i].x, pathPoints[i].y);
+                if (i === 0) ctx.moveTo(pixel.x, pixel.y);
+                else ctx.lineTo(pixel.x, pixel.y);
+            }
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // ============================================================
+        // 7. EXPORT FUNCTIONS (UPDATED: explicit pixel -> world conversion)
+        // ============================================================
+        function exportJSON() {
+            const data = {
+                walls: walls.map(w => ({ x: w.x, y: w.y, width: w.width, height: w.height })),
+                tables: tables.map(t => ({ name: t.name, x: t.x, y: t.y, width: t.width, height: t.height, deliveryOffsetX: t.deliveryOffsetX, deliveryOffsetY: t.deliveryOffsetY })),
+                kitchens: kitchens.map(k => ({ x: k.x, y: k.y, width: k.width, height: k.height })),
+                deliveryPoints: deliveryPoints.map(d => ({ x: d.x, y: d.y, width: d.width, height: d.height })),
+                startPosition: startPosition ? { x: startPosition.x, y: startPosition.y, width: startPosition.width, height: startPosition.height } : null
+            };
+            download(JSON.stringify(data, null, 2), "restaurant_map.json", "application/json");
+        }
+
+        function exportPGM() {
+            const grid = buildOccupancyGrid();
+            let header = `P5\n${MAP_SIZE} ${MAP_SIZE}\n255\n`;
+            let binaryData = new Uint8Array(MAP_SIZE * MAP_SIZE);
+            for (let i = 0; i < MAP_SIZE; i++) {
+                for (let j = 0; j < MAP_SIZE; j++) {
+                    binaryData[i * MAP_SIZE + j] = grid[i][j];
+                }
+            }
+            const blob = new Blob([header, binaryData], { type: "image/x-portable-graymap" });
+            download(blob, "map_nhahang.pgm", "image/x-portable-graymap");
+        }
+
+        function exportWaypoints() {
+            let lines = [];
+
+            // Helper: convert any object's center (or any point) from world to pixel then to world again?
+            // Actually we want the exact world coordinates of the green dot (or kitchen center)
+            // but to be absolutely certain, we compute from pixel coordinates using the same logic as rendering.
+            // For kitchen: use its center pixel -> world
+            if (kitchens.length > 0) {
+                const kit = kitchens[0];
+                const kitCenterX = kit.x + kit.width / 2;
+                const kitCenterY = kit.y + kit.height / 2;
+                const kitPixel = worldToPixel(kitCenterX, kitCenterY);
+                const kitWorld = pixelToWorld(kitPixel.x, kitPixel.y);
+                lines.push(`Quay_Bep: X=${kitWorld.x.toFixed(2)}, Y=${kitWorld.y.toFixed(2)}, Theta=0.00`);
+            } else {
+                lines.push(`Quay_Bep: X=0.00, Y=0.00, Theta=0.00`);
+            }
+
+            for (let tbl of tables) {
+                // Get green dot world coordinates via the same method used for rendering
+                // Instead of relying on getTableDeliveryPoint (which uses offsets), we recompute from pixel space
+                // to ensure perfect consistency: table center pixel + offset in pixels -> world
+                const centerX = tbl.x + tbl.width / 2;
+                const centerY = tbl.y + tbl.height / 2;
+                const centerPx = worldToPixel(centerX, centerY);
+                // offset in meters -> pixels
+                const offsetXPx = (tbl.deliveryOffsetX || 0) / MAP_RESOLUTION;
+                const offsetYPx = -(tbl.deliveryOffsetY || 0) / MAP_RESOLUTION; // because Y pixel increases downward
+                const dotPx = {
+                    x: centerPx.x + offsetXPx,
+                    y: centerPx.y + offsetYPx
+                };
+                // Clamp to map edges (optional)
+                dotPx.x = Math.min(Math.max(0, dotPx.x), MAP_SIZE);
+                dotPx.y = Math.min(Math.max(0, dotPx.y), MAP_SIZE);
+                const dotWorld = pixelToWorld(dotPx.x, dotPx.y);
+                lines.push(`${tbl.name}: X=${dotWorld.x.toFixed(2)}, Y=${dotWorld.y.toFixed(2)}, Theta=0.00`);
+            }
+
+            download(lines.join("\n"), "waypoints.txt", "text/plain");
+        }
+
+        function download(content, filename, mime) {
+            const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+
+        // ============================================================
+        // 8. CANVAS RENDERER (static, no camera transforms)
+        // ============================================================
+        function renderCanvas() {
+            ctx.clearRect(0, 0, MAP_SIZE, MAP_SIZE);
+
+            // Draw grid (every 0.5 meters)
+            const stepWorld = 0.5;
+            for (let wx = WORLD_MIN; wx <= WORLD_MAX + 0.1; wx += stepWorld) {
+                const p = worldToPixel(wx, 0);
+                if (p.x >= 0 && p.x <= MAP_SIZE) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = "#ccc";
+                    ctx.lineWidth = 0.5;
+                    ctx.moveTo(p.x, 0);
+                    ctx.lineTo(p.x, MAP_SIZE);
+                    ctx.stroke();
+                }
+            }
+            for (let wy = WORLD_MIN; wy <= WORLD_MAX + 0.1; wy += stepWorld) {
+                const p = worldToPixel(0, wy);
+                if (p.y >= 0 && p.y <= MAP_SIZE) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = "#ccc";
+                    ctx.lineWidth = 0.5;
+                    ctx.moveTo(0, p.y);
+                    ctx.lineTo(MAP_SIZE, p.y);
+                    ctx.stroke();
+                }
+            }
+
+            // Map border
+            ctx.beginPath();
+            ctx.strokeStyle = "#2c3e66";
+            ctx.lineWidth = 3;
+            ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
+
+            function drawWorldRect(obj, color, label = null) {
+                const topLeft = worldToPixel(obj.x, obj.y);
+                const bottomRight = worldToPixel(obj.x + obj.width, obj.y + obj.height);
+                const widthPx = bottomRight.x - topLeft.x;
+                const heightPx = bottomRight.y - topLeft.y;
+                ctx.fillStyle = color;
+                ctx.fillRect(topLeft.x, topLeft.y, widthPx, heightPx);
+                if (label) {
+                    ctx.fillStyle = "#fff";
+                    ctx.font = `bold 14px monospace`;
+                    ctx.shadowBlur = 0;
+                    ctx.fillText(label, topLeft.x + 3, topLeft.y + 16);
+                }
+            }
+
+            for (let w of walls) drawWorldRect(w, "#000000");
+            for (let k of kitchens) drawWorldRect(k, "#4caf50", "??");
+            for (let d of deliveryPoints) drawWorldRect(d, "#ff9800", "??");
+            if (startPosition) drawWorldRect(startPosition, "#2196f3", "START");
+
+            // Draw tables with green dots and dashed lines
+            for (let t of tables) {
+                drawWorldRect(t, "#b77ee6", t.name);
+
+                // Get green dot pixel coordinates exactly as we will export them
+                const centerX = t.x + t.width / 2;
+                const centerY = t.y + t.height / 2;
+                const centerPx = worldToPixel(centerX, centerY);
+                const offsetXPx = (t.deliveryOffsetX || 0) / MAP_RESOLUTION;
+                const offsetYPx = -(t.deliveryOffsetY || 0) / MAP_RESOLUTION;
+                const dotPx = {
+                    x: centerPx.x + offsetXPx,
+                    y: centerPx.y + offsetYPx
+                };
+                // Clamp to map edges for drawing (optional)
+                const clampedX = Math.min(Math.max(0, dotPx.x), MAP_SIZE);
+                const clampedY = Math.min(Math.max(0, dotPx.y), MAP_SIZE);
+
+                // Dashed line from center to green dot
+                ctx.beginPath();
+                ctx.strokeStyle = "rgba(0, 255, 102, 0.5)";
+                ctx.setLineDash([4, 4]);
+                ctx.moveTo(centerPx.x, centerPx.y);
+                ctx.lineTo(clampedX, clampedY);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                ctx.fillStyle = "#00ff66";
+                ctx.beginPath();
+                ctx.arc(clampedX, clampedY, 5, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.fillStyle = "white";
+                ctx.font = `10px monospace`;
+                ctx.fillText("stop", clampedX + 6, clampedY - 4);
+            }
+
+            // Highlight selected object
+            if (selectedObject && selectedObject.ref) {
+                const ref = selectedObject.ref;
+                const p1 = worldToPixel(ref.x, ref.y);
+                const p2 = worldToPixel(ref.x + ref.width, ref.y + ref.height);
+                const wPx = p2.x - p1.x;
+                const hPx = p2.y - p1.y;
+                ctx.save();
+                ctx.strokeStyle = "#ffdd77";
+                ctx.lineWidth = 3;
+                ctx.shadowBlur = 0;
+                ctx.strokeRect(p1.x, p1.y, wPx, hPx);
+                ctx.restore();
+            }
+        }
+
+        // ============================================================
+        // 9. MOUSE EVENT HANDLERS (no camera, direct pixel coords)
+        // ============================================================
+        function getMouseWorldCoords(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            let canvasX = (e.clientX - rect.left) * scaleX;
+            let canvasY = (e.clientY - rect.top) * scaleY;
+            canvasX = Math.min(Math.max(0, canvasX), MAP_SIZE);
+            canvasY = Math.min(Math.max(0, canvasY), MAP_SIZE);
+            let world = pixelToWorld(canvasX, canvasY);
+            world.x = Math.min(WORLD_MAX, Math.max(WORLD_MIN, world.x));
+            world.y = Math.min(WORLD_MAX, Math.max(WORLD_MIN, world.y));
+            return world;
+        }
+
+        function handleMouseDown(e) {
+            const world = getMouseWorldCoords(e);
+            if (activeTool === "wall") {
+                isDrawingWall = true;
+                wallStartWorld = world;
+                return;
+            }
+            else if (activeTool === "select") {
+                const deliveryHit = hitTestDeliveryPoint(world.x, world.y);
+                if (deliveryHit) {
+                    selectedObject = { type: 'table', ref: deliveryHit.ref, id: deliveryHit.ref.id };
+                    isDragging = true;
+                    isDraggingDeliveryPoint = true;
+                    dragStartWorld = world;
+                    updatePropertyPanel();
+                    renderCanvas();
+                    return;
+                }
+                const hit = hitTestObjects(world.x, world.y);
+                if (hit) {
+                    selectedObject = { type: hit.type, ref: hit.ref, id: hit.id };
+                    isDragging = true;
+                    isDraggingDeliveryPoint = false;
+                    dragStartWorld = world;
+                } else {
+                    selectedObject = null;
+                    isDragging = false;
+                }
+                updatePropertyPanel();
+                renderCanvas();
+            }
+            else if (activeTool === "table") addTable(world.x, world.y);
+            else if (activeTool === "kitchen") addKitchen(world.x, world.y);
+            else if (activeTool === "delivery") addDeliveryPoint(world.x, world.y);
+            else if (activeTool === "start") setStartPosition(world.x, world.y);
+        }
+
+        let isDrawingWall = false;
+        let wallStartWorld = null;
+
+        function handleMouseMove(e) {
+            const currentWorld = getMouseWorldCoords(e);
+            if (isDragging && selectedObject) {
+                if (isDraggingDeliveryPoint) {
+                    const table = selectedObject.ref;
+                    const centerX = table.x + table.width / 2;
+                    const centerY = table.y + table.height / 2;
+                    const newOffsetX = currentWorld.x - centerX;
+                    const newOffsetY = currentWorld.y - centerY;
+                    table.deliveryOffsetX = newOffsetX;
+                    table.deliveryOffsetY = newOffsetY;
+                    renderCanvas();
+                    updatePropertyPanel();
+                } else {
+                    if (dragStartWorld) {
+                        const dx = currentWorld.x - dragStartWorld.x;
+                        const dy = currentWorld.y - dragStartWorld.y;
+                        if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+                            moveSelectedObject(dx, dy);
+                            dragStartWorld = currentWorld;
+                        }
+                    }
+                }
+                return;
+            }
+            if (isDrawingWall && wallStartWorld) {
+                renderCanvas();
+                const startPx = worldToPixel(wallStartWorld.x, wallStartWorld.y);
+                const endPx = worldToPixel(currentWorld.x, currentWorld.y);
+                ctx.save();
+                ctx.strokeStyle = "red";
+                ctx.lineWidth = 2;
+                ctx.setLineDash([8, 6]);
+                ctx.strokeRect(startPx.x, startPx.y, endPx.x - startPx.x, endPx.y - startPx.y);
+                ctx.restore();
+            }
+        }
+
+        function handleMouseUp(e) {
+            if (isDrawingWall && wallStartWorld) {
+                const endWorld = getMouseWorldCoords(e);
+                addWallRect(wallStartWorld, endWorld);
+                isDrawingWall = false;
+                wallStartWorld = null;
+                renderCanvas();
+            }
+            isDragging = false;
+            isDraggingDeliveryPoint = false;
+            dragStartWorld = null;
+        }
+
+        function handleWheel(e) {
+            e.preventDefault();
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Delete' && selectedObject) { deleteSelected(); renderCanvas(); }
+        });
+
+        document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                activeTool = btn.getAttribute('data-tool');
+                document.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                canvas.style.cursor = 'crosshair';
+                isDragging = false;
+                isDraggingDeliveryPoint = false;
+            });
+        });
+        document.getElementById('exportJsonBtn').addEventListener('click', exportJSON);
+        document.getElementById('exportPgmBtn').addEventListener('click', exportPGM);
+        document.getElementById('exportWaypointsBtn').addEventListener('click', exportWaypoints);
+        document.getElementById('validatePathBtn').addEventListener('click', validateAllPaths);
+
+        canvas.addEventListener('mousedown', handleMouseDown);
+        canvas.addEventListener('mousemove', handleMouseMove);
+        canvas.addEventListener('mouseup', handleMouseUp);
+        canvas.addEventListener('wheel', handleWheel, { passive: false });
+
+        document.querySelector('[data-tool="select"]').classList.add('active');
+        canvas.style.cursor = 'crosshair';
+        renderCanvas();
+    </script>
+</body>
+
+</html>

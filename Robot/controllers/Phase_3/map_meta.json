@@ -1,0 +1,7 @@
+{
+  "resolution": 0.05,
+  "floorSize": 20,
+  "mapSize": 400,
+  "robot_start_x": 0.05,
+  "robot_start_y": 1
+}

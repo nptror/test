@@ -1,0 +1,343 @@
+/* ===== Dashboard Overview Page ===== */
+
+.dashboard-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.dashboard-header h2 {
+  margin: 0 0 4px 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: #1a202c;
+}
+
+.dashboard-header p {
+  margin: 0;
+  color: #718096;
+  font-size: 14px;
+}
+
+/* ===== Stat Cards Row ===== */
+.stat-cards-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.stat-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  border: 1px solid #e8ecf1;
+  position: relative;
+  transition: box-shadow 0.2s ease;
+}
+
+.stat-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.stat-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.stat-card-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #a0aec0;
+  text-transform: uppercase;
+}
+
+.stat-card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.stat-card-icon.revenue {
+  background: #ebf5ff;
+  color: #1890ff;
+}
+
+.stat-card-icon.orders {
+  background: #fff7e6;
+  color: #fa8c16;
+}
+
+.stat-card-icon.tables {
+  background: #f0f5ff;
+  color: #2f54eb;
+}
+
+.stat-card-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1a202c;
+  line-height: 1.2;
+  margin-bottom: 6px;
+}
+
+.stat-card-sub {
+  font-size: 13px;
+  color: #718096;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-card-sub .trend-up {
+  color: #38a169;
+  font-weight: 500;
+}
+
+/* Available Tables specific styles */
+.tables-fraction {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.tables-fraction .big-num {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1a202c;
+}
+
+.tables-fraction .divider {
+  font-size: 20px;
+  color: #a0aec0;
+  margin: 0 2px;
+}
+
+.tables-fraction .total-num {
+  font-size: 20px;
+  font-weight: 600;
+  color: #a0aec0;
+}
+
+.tables-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tables-progress-bar {
+  flex: 1;
+  height: 8px;
+  background: #e8ecf1;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.tables-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1890ff 0%, #40a9ff 100%);
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+
+.tables-progress-label {
+  font-size: 12px;
+  color: #718096;
+  white-space: nowrap;
+}
+
+/* ===== Bottom Section (Chart + AI Chat) ===== */
+.dashboard-bottom-row {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 20px;
+}
+
+/* Chart Card */
+.chart-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  border: 1px solid #e8ecf1;
+}
+
+.chart-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.chart-card-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a202c;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 16px;
+}
+
+.chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #4a5568;
+}
+
+.chart-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.chart-legend-dot.food {
+  background-color: #1890ff;
+}
+
+.chart-legend-dot.drink {
+  background-color: #36cfc9;
+}
+
+/* ===== AI Chat Widget ===== */
+.ai-chat-card {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e8ecf1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 420px;
+}
+
+.ai-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.ai-chat-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #1890ff, #40a9ff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.ai-chat-info h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a202c;
+}
+
+.ai-chat-info p {
+  margin: 0;
+  font-size: 12px;
+  color: #a0aec0;
+}
+
+.ai-chat-messages {
+  flex: 1;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.ai-chat-bubble {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ai-chat-bubble.user {
+  align-self: flex-end;
+  background: #1890ff;
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.ai-chat-bubble.bot {
+  align-self: flex-start;
+  background: #f5f7fa;
+  color: #2d3748;
+  border-bottom-left-radius: 4px;
+}
+
+.ai-chat-bubble.bot strong {
+  color: #1a202c;
+}
+
+.ai-chat-input-row {
+  display: flex;
+  align-items: center;
+  border-top: 1px solid #f0f0f0;
+  padding: 12px 16px;
+  gap: 8px;
+}
+
+.ai-chat-input-row input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  color: #2d3748;
+  background: transparent;
+}
+
+.ai-chat-input-row input::placeholder {
+  color: #a0aec0;
+}
+
+.ai-chat-send-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: #1890ff;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: background 0.2s ease;
+}
+
+.ai-chat-send-btn:hover {
+  background: #40a9ff;
+}
+
+/* Responsive */
+@media (max-width: 1100px) {
+  .dashboard-bottom-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .stat-cards-row {
+    grid-template-columns: 1fr;
+  }
+}

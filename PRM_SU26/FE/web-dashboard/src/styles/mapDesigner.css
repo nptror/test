@@ -1,0 +1,282 @@
+/* ============================================
+   Restaurant Map Designer — mapDesigner.css
+   ============================================ */
+
+/* ---- Top Toolbar ---- */
+.top-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 64px;
+  padding: 0 20px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.toolbar-brand,
+.toolbar-actions,
+.toolbar-meta,
+.toolbar-zoom {
+  display: flex;
+  align-items: center;
+}
+
+.toolbar-brand {
+  min-width: 260px;
+  gap: 12px;
+}
+
+.toolbar-logo {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  color: #ffffff;
+  place-items: center;
+  background: #1677ff;
+  border-radius: 8px;
+}
+
+.toolbar-title {
+  margin: 0 !important;
+  color: #111827 !important;
+  white-space: nowrap;
+}
+
+.toolbar-zoom {
+  gap: 4px;
+}
+
+/* ---- Canvas Card ---- */
+.map-canvas-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+/* ---- Canvas Viewport (captures pointer events) ---- */
+.map-canvas-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  cursor: default;
+}
+
+.canvas-cursor-grab {
+  cursor: grab;
+}
+
+.canvas-cursor-grab:active {
+  cursor: grabbing;
+}
+
+.canvas-cursor-crosshair {
+  cursor: crosshair;
+}
+
+/* ---- Grid Background ---- */
+.map-canvas-grid {
+  position: relative;
+  width: 3000px;
+  height: 2000px;
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(#e5e7eb 1px, transparent 1px),
+    linear-gradient(90deg, #e5e7eb 1px, transparent 1px);
+  background-size: 20px 20px;
+  will-change: transform;
+}
+
+/* ---- Floating Toolbox ---- */
+.floating-toolbox {
+  position: absolute;
+  top: 72px;
+  left: 16px;
+  z-index: 10;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+/* ---- Canvas Status Bar ---- */
+.canvas-status {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+/* ---- Map Objects (common) ---- */
+.map-object {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  color: #1f2937;
+  cursor: pointer;
+  border: 2px solid #94a3b8;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+  transition: box-shadow 0.15s, outline-color 0.15s;
+}
+
+.map-object:hover {
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.18);
+}
+
+.map-object-selected {
+  outline: 2px solid #1677ff;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgba(22, 119, 255, 0.12);
+}
+
+/* ---- Object Type Styles ---- */
+.map-object-table {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #3b82f6;
+}
+
+.map-object-wall {
+  flex-direction: row;
+  gap: 0;
+  padding: 0;
+  font-size: 10px;
+  color: #374151;
+  background: #4b5563;
+  border-color: #374151;
+  border-radius: 3px;
+}
+
+.map-object-wall span {
+  color: #ffffff;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.map-object-kitchen {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #f59e0b;
+}
+
+.map-object-restricted {
+  color: #be123c;
+  background: #fff1f2;
+  border-color: #f43f5e;
+}
+
+.map-object-charging {
+  color: #6d28d9;
+  background: #f5f3ff;
+  border-color: #8b5cf6;
+}
+
+.map-object-robotStart {
+  color: #3730a3;
+  background: #eef2ff;
+  border-color: #6366f1;
+  border-style: dashed;
+  opacity: 0.75;
+}
+
+/* ---- Property Panel ---- */
+.property-panel-inner {
+  padding: 20px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.project-card,
+.panel-card {
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.project-card {
+  margin-bottom: 12px;
+}
+
+.project-card h5 {
+  margin: 4px 0;
+}
+
+.property-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.full-width-control {
+  width: 100%;
+}
+
+.layer-list {
+  display: grid;
+  gap: 8px;
+}
+
+.layer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.layer-row:hover {
+  background: #f9fafb;
+}
+
+.layer-row.active {
+  background: #e6f4ff;
+  border-color: #91caff;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 960px) {
+  .top-toolbar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 64px;
+    padding: 12px 16px;
+  }
+
+  .toolbar-actions {
+    justify-content: center;
+  }
+}
+
+/* ---- Robot Calibrating Animation ---- */
+@keyframes robotPulse {
+  0%   { box-shadow: 0 0 10px rgba(243, 156, 18, 0.8); }
+  50%  { box-shadow: 0 0 24px rgba(243, 156, 18, 1), 0 0 40px rgba(243, 156, 18, 0.4); }
+  100% { box-shadow: 0 0 10px rgba(243, 156, 18, 0.8); }
+}
