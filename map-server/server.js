@@ -10,7 +10,7 @@ app.use(express.json({ limit: '10mb' }));
 
 // --- Đường dẫn đến thư mục controller của Webots ---
 // Bạn phải sửa đường dẫn này cho đúng với máy của bạn
-const WEBOTS_CONTROLLER_DIR = process.env.WEBOTS_CONTROLLER_DIR || 'D:/User/PRM/ProjectGroup/Robot/controllers/Phase_3';// Ví dụ: D:/User/MLN/webots_project/controllers/my_robot_controller
+const WEBOTS_CONTROLLER_DIR = process.env.WEBOTS_CONTROLLER_DIR || 'D:/User/PRM/ProjectGroup/test/Robot/controllers/Phase_3';// Ví dụ: D:/User/MLN/webots_project/controllers/my_robot_controller
 
 // Hàm tạo occupancy grid từ objects
 function buildOccupancyGrid(objects, mapSize) {
@@ -152,7 +152,7 @@ app.post('/api/robot/control', (req, res) => {
     try {
         const { command, target, direction } = req.body;
         const commandPath = path.join(WEBOTS_CONTROLLER_DIR, 'command.txt');
-        
+
         fs.writeFileSync(commandPath, `${command || 'NONE'} ${target || 'NONE'} ${direction || 'NONE'}`);
         console.log(`>>> [SERVER] Đã ghi lệnh robot: ${command || 'NONE'} ${target || 'NONE'} ${direction || 'NONE'}`);
         res.json({ success: true });

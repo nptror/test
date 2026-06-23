@@ -15,8 +15,8 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.423055191093027 0.42396178831428155 0.8008000420445786 1.789052756567173
-  position 0.9480297907157043 -6.836599341831841 10.368245523752098
+  orientation -0.04892821809600267 0.03418551843193081 -0.9982171005364967 4.359663997340401
+  position 0.7941131877523283 -0.0216977276395931 0.15976680094114032
   follow "floor"
   followType "Mounted Shot"
 }
@@ -187,9 +187,35 @@ Wall {
   size 0.1 0.5 1
 }
 WallFollowingPioneer3dx {
-  translation 0.420265 1.23241 0.330101
+  translation 0.4201432546578354 1.2323215721291008 0.0917903655788431
+  rotation 0.12445668703427973 -0.977420915670195 -0.17075973372809236 0.01843760227987109
   controller "Phase_3"
   extensionSlot [
+    HingeJoint {
+      device [
+        RotationalMotor {
+          name "front_wheel_motor"
+        }
+      ]
+      endPoint Solid {
+        translation 0.09 1.8366e-07 -0.05
+        rotation 1 0 0 1.5708
+        children [
+          Shape {
+            geometry Cylinder {
+              height 0.02
+              radius 0.04
+            }
+          }
+        ]
+        boundingObject Cylinder {
+          height 0.02
+          radius 0.04
+        }
+        physics Physics {
+        }
+      }
+    }
     SharpGP2Y0A41SK0F {
       translation -0.18 0.13 0.15
       rotation 0 0 1 1.5708
