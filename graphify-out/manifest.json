@@ -1,0 +1,882 @@
+{
+  ".claude/settings.local.json": {
+    "mtime": 1782495375.0887692,
+    "ast_hash": "fda825c1646e444e43827c5c9ffc6094",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.API/Controllers/AuthController.cs": {
+    "mtime": 1781594101.389184,
+    "ast_hash": "88df7e11325ce10fd777852a6167e08e",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.API/Controllers/MenuItemsController.cs": {
+    "mtime": 1781594101.389711,
+    "ast_hash": "858fdc69aefe6544fd9175bb3d37acf3",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.API/Controllers/OrdersController.cs": {
+    "mtime": 1781594101.389711,
+    "ast_hash": "9ea0d38ba5c0e360e6817c64a884a2ef",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.API/Controllers/TablesController.cs": {
+    "mtime": 1781594101.3907106,
+    "ast_hash": "120c8c0841e24a8bf309f32a1b97fefe",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.API/Hubs/OrderHub.cs": {
+    "mtime": 1781594101.3907106,
+    "ast_hash": "f7e760120f4f8e297c140c7b87cb9a3c",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.API/Middleware/ExceptionHandlingMiddleware.cs": {
+    "mtime": 1781594101.391711,
+    "ast_hash": "981a57609a28c03a5e8ecf031c6b46d3",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.API/Program.cs": {
+    "mtime": 1781594101.391711,
+    "ast_hash": "3e096d9da105abe1dfdfcf2813adc124",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.API/Properties/launchSettings.json": {
+    "mtime": 1781594101.3927276,
+    "ast_hash": "365bf222b336f23ac5b4464bab9a42a5",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.API/Services/OrderNotificationService.cs": {
+    "mtime": 1781594101.3927276,
+    "ast_hash": "269838db177d9a273566692205cd4f94",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.API/SmartDine.API.csproj": {
+    "mtime": 1781594101.4107285,
+    "ast_hash": "6f5df760aa799bfe42c462c1a2c036b8",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.API/appsettings.Development.json": {
+    "mtime": 1781594101.4122522,
+    "ast_hash": "0b36d263d1faca07c3608915192983f4",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.API/appsettings.json": {
+    "mtime": 1781594101.4122522,
+    "ast_hash": "7a6f298ea6dcc28ce3a880f13022d742",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/Constants/ValidationMessages.cs": {
+    "mtime": 1781594101.413277,
+    "ast_hash": "65b4c4e98c90cca117ee47a47e04ac5d",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/DTOs/Auth/AuthDtos.cs": {
+    "mtime": 1781594101.414837,
+    "ast_hash": "17bd6b8534416ab3498f06b77b9d4ce0",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/DTOs/Common/ApiResponse.cs": {
+    "mtime": 1781594101.414837,
+    "ast_hash": "7bc7d51cccfca3db9e89d781b0d89b28",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/DTOs/Menu/MenuDtos.cs": {
+    "mtime": 1781594101.414837,
+    "ast_hash": "64777a6adb5dbcb36cf3e345b17f5017",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/DTOs/Orders/OrderDtos.cs": {
+    "mtime": 1781594101.414837,
+    "ast_hash": "03f4a7450e48c08330b0dc49dbae4906",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/DTOs/Tables/TableDtos.cs": {
+    "mtime": 1781594101.414837,
+    "ast_hash": "4d22684e12b143ab91ca6b1c64013f52",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/DependencyInjection.cs": {
+    "mtime": 1781594101.414837,
+    "ast_hash": "f3da251b098e25f937bd16ff771dd6f1",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/Helper/Util.cs": {
+    "mtime": 1781594101.414837,
+    "ast_hash": "144f7ea2936e6ebc2bb8f50c388f1032",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/Services/AuthService.cs": {
+    "mtime": 1781594101.414837,
+    "ast_hash": "76ced6df033a54bdcb657e59f6335652",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/Services/Interface/IAuthService.cs": {
+    "mtime": 1781594101.4193752,
+    "ast_hash": "a8d7488bc1770989efa0cb3cf3a5927a",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/Services/MenuService.cs": {
+    "mtime": 1781594101.4193752,
+    "ast_hash": "e45c4fc51bdfd2dea642b00ea86354c3",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/Services/OrderService.cs": {
+    "mtime": 1781594101.4193752,
+    "ast_hash": "4141c1979d0a5a17e5fac316d8bd58ff",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/Services/TableService.cs": {
+    "mtime": 1781594101.4208992,
+    "ast_hash": "0d35ac788936673a5c4203f4ac95838b",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Application/SmartDine.Application.csproj": {
+    "mtime": 1781594101.4208992,
+    "ast_hash": "ad5a37b33b7d927c7c85b7febc8952ec",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/BaseEntity.cs": {
+    "mtime": 1781594101.4225059,
+    "ast_hash": "fdf45193fc5ddec5d179c054481897dc",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/BusinessContextLog.cs": {
+    "mtime": 1781594101.4231515,
+    "ast_hash": "e8c3b27c76f99669614d4d90dc4cac9c",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/Combo.cs": {
+    "mtime": 1781594101.4231515,
+    "ast_hash": "5e61faa2e39b4d661bf710e33e36c0ba",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/ComboItem.cs": {
+    "mtime": 1781594101.42368,
+    "ast_hash": "86e1a3a12c2751734f714f2e3ae5b788",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/Customer.cs": {
+    "mtime": 1781594101.42368,
+    "ast_hash": "26811eab97ea201c98cb23e56ba7ca44",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/CustomerActivity.cs": {
+    "mtime": 1781594101.4247825,
+    "ast_hash": "2415f7ffe43e33561c6f27800e7aaec4",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/CustomerCoupon.cs": {
+    "mtime": 1781594101.425316,
+    "ast_hash": "b4f7da64d1b6945bf4f582df3810ca3f",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/CustomerStatistics.cs": {
+    "mtime": 1781594101.425316,
+    "ast_hash": "438089d8f1e5952357340aff6f8e9d7c",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/DiningSession.cs": {
+    "mtime": 1781594101.425316,
+    "ast_hash": "f0add031f3c9797f1cb7e043af5bcf9e",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/LoyaltyTransaction.cs": {
+    "mtime": 1781594101.425316,
+    "ast_hash": "48b33c215af4c964e0cf69b256bfc21d",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/MenuCategory.cs": {
+    "mtime": 1781594101.425316,
+    "ast_hash": "8ef5d47a8ef3f1c44df94904f1c68ba8",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/MenuItem.cs": {
+    "mtime": 1781594101.425316,
+    "ast_hash": "50b3a3aaff219464976adf9d9ca9f1f4",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/MenuItemPriceHistory.cs": {
+    "mtime": 1781594101.425316,
+    "ast_hash": "0c6e3ed3e96fff91e389db7cf36bfadb",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/MenuItemStatistics.cs": {
+    "mtime": 1781594101.4278455,
+    "ast_hash": "4ee425c3f4784361538e32a66ba5a201",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/Notification.cs": {
+    "mtime": 1781594101.4278455,
+    "ast_hash": "5530b2f0c7ced0dff7f98911cf9b74ea",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/Order.cs": {
+    "mtime": 1781594101.4278455,
+    "ast_hash": "6c9272ef43d510dce2b1fd73c64b29fc",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/OrderCombo.cs": {
+    "mtime": 1781594101.4278455,
+    "ast_hash": "ba11b099fd9c823db5be43b99568b4cd",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/OrderDetail.cs": {
+    "mtime": 1781594101.4278455,
+    "ast_hash": "f4d22598b517a5decff32d57af1a850a",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/OrderDetailReturn.cs": {
+    "mtime": 1781594101.4299324,
+    "ast_hash": "d8634a7c499fba57e54bdde157b39ab7",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/OrderPromotion.cs": {
+    "mtime": 1781594101.4304557,
+    "ast_hash": "70de3ca5521989c21cf89512f7288b9e",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/Payment.cs": {
+    "mtime": 1781594101.4304557,
+    "ast_hash": "4443cdf095af9b2e30e3d893f6c4f975",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/Promotion.cs": {
+    "mtime": 1781594101.4304557,
+    "ast_hash": "3704627ea60e9b9b48fe58521f924916",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/PromotionMembership.cs": {
+    "mtime": 1781594101.4304557,
+    "ast_hash": "d484838ed8c000b8568a872d75830a3b",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/PromotionMenuItem.cs": {
+    "mtime": 1781594101.4319797,
+    "ast_hash": "fe7d89e469e0580f793e481aaf886b8d",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/RecommendationLog.cs": {
+    "mtime": 1781594101.4319797,
+    "ast_hash": "6961086cbd473de18feaba74aad8ec2a",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/Review.cs": {
+    "mtime": 1781594101.4319797,
+    "ast_hash": "384dffe0f26cd0d232936fca1960b610",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/Robot.cs": {
+    "mtime": 1781594101.4330034,
+    "ast_hash": "65fcbcbe1c3639c263b6a32ad5c189d4",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/RobotDeliveryBatch.cs": {
+    "mtime": 1781594101.4330034,
+    "ast_hash": "55e7529b53b323daf46d4f4e1bf12f0e",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/RobotDeliveryItem.cs": {
+    "mtime": 1781594101.434027,
+    "ast_hash": "b620e2d0a08575d09848d5778a53b7c0",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/SessionParticipant.cs": {
+    "mtime": 1781594101.434027,
+    "ast_hash": "7c7c3f4386089056756d8f7d7d3ad449",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/Table.cs": {
+    "mtime": 1781594101.434027,
+    "ast_hash": "713afcf26c52d117983d5166f94af166",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/TableReservation.cs": {
+    "mtime": 1781594101.435113,
+    "ast_hash": "381918afc76da1a5ee1e115bb9b86861",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Entities/User.cs": {
+    "mtime": 1781594101.435113,
+    "ast_hash": "aeae0bb4b67f52b505958ddc846e01a3",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Enums/LoyaltyTier.cs": {
+    "mtime": 1781594101.435113,
+    "ast_hash": "e58caddb89cacf3ad155e2c8f4f16a37",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Enums/NotificationType.cs": {
+    "mtime": 1781594101.435113,
+    "ast_hash": "18097207b49c79ee75e59f6ef5c69af1",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Enums/OrderStatus.cs": {
+    "mtime": 1781594101.435113,
+    "ast_hash": "dc96541c11ba6dc09412716fa7f080c0",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Enums/PaymentMethod.cs": {
+    "mtime": 1781594101.437179,
+    "ast_hash": "bb8bca602013d42aa9ef89a17a245862",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Enums/PaymentStatus.cs": {
+    "mtime": 1781594101.437179,
+    "ast_hash": "de84c0b5d2d78d7e98a0bdacbe98646c",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Enums/PromotionType.cs": {
+    "mtime": 1781594101.4382024,
+    "ast_hash": "6699f078ec9e4c5a0728968f7636896c",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Enums/TableStatus.cs": {
+    "mtime": 1781594101.4382024,
+    "ast_hash": "bd6b681cf5a2deda0b71a11fe0ad1b97",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Enums/UserRole.cs": {
+    "mtime": 1781594101.4382024,
+    "ast_hash": "af4011322717ac117c0f2d5c53bba121",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Exceptions/BusinessRuleViolationException.cs": {
+    "mtime": 1781594101.4382024,
+    "ast_hash": "d6918a20ea20c240eeaa4cdeea391b42",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Exceptions/DomainException.cs": {
+    "mtime": 1781594101.4397268,
+    "ast_hash": "86bd5d8b24e245ab152d709db79b0e70",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Exceptions/EntityNotFoundException.cs": {
+    "mtime": 1781594101.440249,
+    "ast_hash": "9a53e340c1c4782b6a5ebf0792ea2b1b",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Exceptions/ResourceNotFoundException.cs": {
+    "mtime": 1781594101.440249,
+    "ast_hash": "ff218e47155f54e3b6d7a9da438704f0",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Interfaces/ICustomerRepository.cs": {
+    "mtime": 1781594101.440249,
+    "ast_hash": "4ee68e4f09430be5fa09b7efd466f8b8",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Interfaces/IDiningSessionRepository.cs": {
+    "mtime": 1781594101.440249,
+    "ast_hash": "2fb75fa2d8c38de61250b93de85f67ef",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Interfaces/IJwtTokenService.cs": {
+    "mtime": 1781594101.440249,
+    "ast_hash": "d3250926dde002a4a50abb99c47418a7",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Interfaces/IMenuItemRepository.cs": {
+    "mtime": 1781594101.440249,
+    "ast_hash": "1e4f3cb3be9736ce60fa6f35cb273c8c",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Interfaces/IOrderNotificationService.cs": {
+    "mtime": 1781594101.4427743,
+    "ast_hash": "ee3a9a295e59459de83b8edd5d253c04",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Interfaces/IOrderRepository.cs": {
+    "mtime": 1781594101.443303,
+    "ast_hash": "6212bc429c7408603eeac074f70c8b6c",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Interfaces/IPasswordHasher.cs": {
+    "mtime": 1781594101.443303,
+    "ast_hash": "1d5ae2b0f3a181e066c3daaaf3b4007d",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Interfaces/IPaymentRepository.cs": {
+    "mtime": 1781594101.443303,
+    "ast_hash": "339e0b7f14a29591539335f1a9110a30",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Interfaces/IRepository.cs": {
+    "mtime": 1781594101.443303,
+    "ast_hash": "351f694b19b468697eeb9b61aefa238e",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Interfaces/IReviewRepository.cs": {
+    "mtime": 1781594101.4449959,
+    "ast_hash": "5a3878b6d89315374ac80ca2fcd24af4",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Interfaces/ITableRepository.cs": {
+    "mtime": 1781594101.4455254,
+    "ast_hash": "8f76be4021003c02a45c25f620d5b9b7",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Interfaces/IUnitOfWork.cs": {
+    "mtime": 1781594101.4455254,
+    "ast_hash": "83d37b7da0f8f7c4bea3de0617d4993f",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/Interfaces/IUserRepository.cs": {
+    "mtime": 1781594101.4455254,
+    "ast_hash": "b0c93f58c17b27b11363000af7fd697b",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Domain/SmartDine.Domain.csproj": {
+    "mtime": 1781594101.4455254,
+    "ast_hash": "46b0780bd56312ea2d1bab391f179e89",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/DependencyInjection.cs": {
+    "mtime": 1781594200.1072092,
+    "ast_hash": "10690764031b1fb520a2c938c1a3ba6f",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Migrations/20260603061658_InitialCreate.Designer.cs": {
+    "mtime": 1781594101.4552715,
+    "ast_hash": "c6b4893da2d94dfd722ae0948e79be4f",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Migrations/20260603061658_InitialCreate.cs": {
+    "mtime": 1781594101.4562712,
+    "ast_hash": "0653e0752d4fc78ad81162596b101e76",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Migrations/20260603103256_UpdateDatabaseSchema.Designer.cs": {
+    "mtime": 1781594101.4562712,
+    "ast_hash": "21413d629516ae5a1c1e6758fbeee0bf",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Migrations/20260603103256_UpdateDatabaseSchema.cs": {
+    "mtime": 1781594101.4572706,
+    "ast_hash": "7dd0b319a03a09bf32fe34df16abdfd8",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Migrations/SmartDineDbContextModelSnapshot.cs": {
+    "mtime": 1781594101.4582713,
+    "ast_hash": "2f8a11ed1c831a6392d5357836516779",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Persistence/Configurations/MenuItemConfiguration.cs": {
+    "mtime": 1781594101.459272,
+    "ast_hash": "168946af4ca40bb3a4021ab89b20ef04",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Persistence/Configurations/OrderConfiguration.cs": {
+    "mtime": 1781594101.459272,
+    "ast_hash": "5891632347d4d74d8f1cabc6107daa0d",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Persistence/Configurations/OtherConfigurations.cs": {
+    "mtime": 1781594101.4602711,
+    "ast_hash": "e8b027dee2d80be79f3ca64973c3de32",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Persistence/Configurations/UserConfiguration.cs": {
+    "mtime": 1781594101.4602711,
+    "ast_hash": "b28be70172b2be25add622290331fb8a",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Persistence/DbSeeder.cs": {
+    "mtime": 1781594200.1081967,
+    "ast_hash": "64bf95983d648b998f3ca2ef7e7094d0",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Persistence/Repositories/GenericRepository.cs": {
+    "mtime": 1781594101.4623144,
+    "ast_hash": "598e66eaa325bcf8687ccfcb061bb306",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Persistence/Repositories/OrderRepository.cs": {
+    "mtime": 1781594101.462873,
+    "ast_hash": "d6edb7f542611662c2145f58a29464f1",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Persistence/Repositories/SpecializedRepositories.cs": {
+    "mtime": 1781594101.462873,
+    "ast_hash": "2dfec816eabfa3ce3ac181b9ae84e1a1",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Persistence/Repositories/UnitOfWork.cs": {
+    "mtime": 1781594101.462873,
+    "ast_hash": "c96613f1491a3fcbcf61de78c914b062",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Persistence/SmartDineDbContext.cs": {
+    "mtime": 1781594101.462873,
+    "ast_hash": "281f755d092621688f835c4ee91a8e39",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Security/BCryptPasswordHasher.cs": {
+    "mtime": 1781594101.4649353,
+    "ast_hash": "6c2190176981f53e8ced8d29dc012b6f",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/Security/JwtTokenService.cs": {
+    "mtime": 1781594101.4649353,
+    "ast_hash": "e1a090408c547b5e5baff7434d3b51b0",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Infrastructure/SmartDine.Infrastructure.csproj": {
+    "mtime": 1781594101.4664629,
+    "ast_hash": "7263b7f7f0084a70cca88efc115ef92c",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Tests/CustomWebApplicationFactory.cs": {
+    "mtime": 1781594101.4804707,
+    "ast_hash": "bc93562278de97dd954b5db7608f8140",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Tests/IntegrationTests.cs": {
+    "mtime": 1781594101.481992,
+    "ast_hash": "f16e946a1ad2327a5e52bb20ee6e6191",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.Tests/SmartDine.Tests.csproj": {
+    "mtime": 1781594101.481992,
+    "ast_hash": "316f8212dd07400899ee8f97b9d6a899",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/BE/SmartDine.slnx": {
+    "mtime": 1781594200.1087227,
+    "ast_hash": "9d02abf4a8431e3c741154eeb7a0bdf0",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/customer-mobile/lib/main.dart": {
+    "mtime": 1781594101.4880955,
+    "ast_hash": "c51e281a5184854e712cb03354d8447c",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/customer-mobile/lib/services/api/dio_client.dart": {
+    "mtime": 1781594101.489664,
+    "ast_hash": "4919abbbb8105d19dad54b7d83d336de",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/customer-mobile/lib/services/socket/socket_service.dart": {
+    "mtime": 1781594101.489664,
+    "ast_hash": "c6e5c158c824e8dda543f4a1865e8a1a",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/.vscode/settings.json": {
+    "mtime": 1781594810.2666895,
+    "ast_hash": "99914b932bd37a50b983c5e7c90ae93b",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/package.json": {
+    "mtime": 1781830421.7844589,
+    "ast_hash": "9cd09dc650489fe6333c89424aadc2ac",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/App.tsx": {
+    "mtime": 1781830304.9748707,
+    "ast_hash": "8233d47834da96337dae306e2ca60925",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/components/components_draw_map/MapCanvas.tsx": {
+    "mtime": 1782199539.7315187,
+    "ast_hash": "3a855c0a0b694272448c3ca373e77d2b",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/components/components_draw_map/PropertyPanel.tsx": {
+    "mtime": 1782176781.153211,
+    "ast_hash": "ac1752e5c66b74facda670f27b32c0af",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/components/components_draw_map/RobotConsole.tsx": {
+    "mtime": 1782182436.7832642,
+    "ast_hash": "19b6d6c0fafea84a2dcd0b18a9b70abd",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/components/components_draw_map/Toolbar.tsx": {
+    "mtime": 1782174601.7967794,
+    "ast_hash": "0bccf36141e98fdd6a6b8429f521372d",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/components/components_draw_map/Toolbox.tsx": {
+    "mtime": 1781594200.2689881,
+    "ast_hash": "a206eddc086670af959fe202cff69d46",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/hooks/useSocket.ts": {
+    "mtime": 1781594126.9793057,
+    "ast_hash": "af75679956323654b4cced91299000d8",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/layouts/DashboardLayout.tsx": {
+    "mtime": 1781594126.9803054,
+    "ast_hash": "370a5acdcb2d752e894e25f474e68bb3",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/main.tsx": {
+    "mtime": 1781594200.2710118,
+    "ast_hash": "046b1eb425a9b0fd66623b330042f633",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/pages/auth/LoginPage.tsx": {
+    "mtime": 1781594126.9823053,
+    "ast_hash": "1f86d39c2b89917ec27399de97adec54",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/pages/dashboard/DashboardPage.tsx": {
+    "mtime": 1781594126.984308,
+    "ast_hash": "12b72f9f2f4997fdbb44dca60ca0f0b4",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/pages/dashboard/MenuManagementPage.tsx": {
+    "mtime": 1781594126.9853282,
+    "ast_hash": "20b0020a44263101aaefbf6ea6cff93f",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/pages/dashboard/SettingsPage.tsx": {
+    "mtime": 1781594126.9853282,
+    "ast_hash": "db2021c018f7006d6dbcade59d900427",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/pages/dashboard/StaffManagementPage.tsx": {
+    "mtime": 1781594126.986308,
+    "ast_hash": "0751a99cf2b89ba81485b3f0e4babbcd",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/pages/dashboard/TableManagementPage.tsx": {
+    "mtime": 1781594126.9873054,
+    "ast_hash": "a52dd42d73228785c011567d61c3c725",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/pages/dashboard/TransactionsPage.tsx": {
+    "mtime": 1781594126.9873054,
+    "ast_hash": "c0922ee7293839b70b33b763acd9b2c2",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/pages/draw_map/RestaurantDrawPage.tsx": {
+    "mtime": 1781830261.3561115,
+    "ast_hash": "bdbbdc711615fde6271bf5cc3822a02a",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/services/api/client.ts": {
+    "mtime": 1781830375.2462413,
+    "ast_hash": "a25dfbb2836d7b18550d1668fc59a26d",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/services/menuService.ts": {
+    "mtime": 1781594126.989305,
+    "ast_hash": "9afa65548d1a127c42658267b3cdf53d",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/services/tableService.ts": {
+    "mtime": 1781594126.9903052,
+    "ast_hash": "37137fc20e9790f48caf7126b5d45af3",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/store/index.ts": {
+    "mtime": 1781594126.9903052,
+    "ast_hash": "084f284029c01fbae5238d5fec76011f",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/store/mapStore.ts": {
+    "mtime": 1781977652.5399487,
+    "ast_hash": "4c870e8e2d4bf3b7f93e03d10b5f1cff",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/store/slices/authSlice.ts": {
+    "mtime": 1781594126.9913054,
+    "ast_hash": "70789e5da3c137592bca045d62053b7a",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/types/map.ts": {
+    "mtime": 1781830201.093648,
+    "ast_hash": "8b22b21edee8b6a3ec47ab1fe7f8b35d",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/types/menu.ts": {
+    "mtime": 1781594126.992877,
+    "ast_hash": "3fa666309798c3f2fafb97f6f42227d5",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/types/table.ts": {
+    "mtime": 1781594126.992877,
+    "ast_hash": "4034421d00ff48489e3ae70ddff70db7",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/utils/astar.ts": {
+    "mtime": 1781974312.7966952,
+    "ast_hash": "acc8ce774626154166e4862e366f4022",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/utils/coordinateUtils.ts": {
+    "mtime": 1781973827.0973003,
+    "ast_hash": "5bd4fe7835eaeec24f33293105e58c1a",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/utils/exportPGM.ts": {
+    "mtime": 1782193136.7935345,
+    "ast_hash": "7c842cc716d68b1516ee8a01447ce2b0",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/utils/exportWaypoints.ts": {
+    "mtime": 1782152422.521697,
+    "ast_hash": "cca34d2fc99570a9146988d6a0938a2e",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/src/vite-env.d.ts": {
+    "mtime": 1781594126.994408,
+    "ast_hash": "8f68c27c3fc38817b2726b20e2d4f1ee",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/tsconfig.json": {
+    "mtime": 1781594126.9954536,
+    "ast_hash": "ba279baf69c36ea9fb560fcc81100f82",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/tsconfig.node.json": {
+    "mtime": 1781594126.9954536,
+    "ast_hash": "281e378713152cccc7860c818db55849",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/vite.config.ts": {
+    "mtime": 1781594126.9954536,
+    "ast_hash": "811fb4e613f33c97bf99c37fc3d12434",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/Phase_1/Phase_1.c": {
+    "mtime": 1780909250.9227123,
+    "ast_hash": "95c7c8a747f24662b11a7f4eec6af479",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/Phase_2/Phase_2.c": {
+    "mtime": 1781062251.6495137,
+    "ast_hash": "c55c7ddf68c7cefc26f31dc790a6d96a",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/Phase_2_4Wheel/Phase_2_4Wheel.c": {
+    "mtime": 1780975289.3899899,
+    "ast_hash": "234c116a22e50797e9b78f64bd4608c6",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/Phase_3/.vscode/settings.json": {
+    "mtime": 1781587294.6544783,
+    "ast_hash": "99914b932bd37a50b983c5e7c90ae93b",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/Phase_3/Phase_3.c": {
+    "mtime": 1782200263.469279,
+    "ast_hash": "39b2a57f5a251f368bdd102d33a2aa7e",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/Phase_3/map_meta.json": {
+    "mtime": 1782492549.8395765,
+    "ast_hash": "9e43f03ea573b23a85396e1c8cbcf168",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/define_name/define_name.c": {
+    "mtime": 1780893427.7893274,
+    "ast_hash": "9933c391acba94518eb58914f0db5a7f",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/my_Test_controller/my_Test_controller.c": {
+    "mtime": 1782179211.810341,
+    "ast_hash": "063bc1c96c60073189b74070b71c22c9",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/robot_test/robot_test.c": {
+    "mtime": 1780890545.5866256,
+    "ast_hash": "f2b75e992d7faf0f48f554fe27facae7",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/tes02/tes02.c": {
+    "mtime": 1780904565.0524611,
+    "ast_hash": "af21f25acff17c70ab8f3b0b9f5b53ee",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/test01_distance_sensor/test01_distance_sensor.c": {
+    "mtime": 1780904027.5167072,
+    "ast_hash": "cdf93ac45b711ec24b872624dfd6b27f",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/test03_run2m/test03_run2m.c": {
+    "mtime": 1780904660.1511407,
+    "ast_hash": "15d1eba16d06bbbdedfe7a2dfb72ffd0",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/test04_lidar/test04_lidar.c": {
+    "mtime": 1780905031.2291627,
+    "ast_hash": "c71c452ebc9bc4a2df4340ba2c840a37",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/zzzTrash/zzzTrash.c": {
+    "mtime": 1780767562.1009462,
+    "ast_hash": "257e1eed556bb1152c2ce9de86aeeb42",
+    "semantic_hash": ""
+  },
+  "map-server/package.json": {
+    "mtime": 1782172477.372645,
+    "ast_hash": "ace0f8f182fd849d7ef8a29d7ebdda09",
+    "semantic_hash": ""
+  },
+  "map-server/server.js": {
+    "mtime": 1782199539.7966096,
+    "ast_hash": "31f89ee26a1dd210a4c1bbb4d53e8500",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/customer-mobile/pubspec.yaml": {
+    "mtime": 1781594101.489664,
+    "ast_hash": "6f3859ac6b7fe86b1f1c27028aa4033b",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/FE/web-dashboard/index.html": {
+    "mtime": 1781594101.4926856,
+    "ast_hash": "3cee8f6e98bde7adef064f67419a79be",
+    "semantic_hash": ""
+  },
+  "PRM_SU26/README.md": {
+    "mtime": 1781594200.2767296,
+    "ast_hash": "f7a4e45585b126000e509c87ddbcd850",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/Phase_2_4Wheel/waypoints.txt": {
+    "mtime": 1780975839.3150773,
+    "ast_hash": "234257d698d112eba2b23e80b2ce1c06",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/Phase_3/command.txt": {
+    "mtime": 1782492604.878606,
+    "ast_hash": "155d46aabcf5bde47d407641f7dd4292",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/Phase_3/compile_log.txt": {
+    "mtime": 1782178670.6965368,
+    "ast_hash": "44a634129d872ad0c045e49d4bb1d4f1",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/Phase_3/index.html": {
+    "mtime": 1781268066.7736025,
+    "ast_hash": "06bb0bf0c541282db3c8e6bde8d208c7",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/Phase_3/robot_path.txt": {
+    "mtime": 1782492604.881646,
+    "ast_hash": "1d46e760de0cfede8448367f01f5ca3c",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/Phase_3/robot_state.txt": {
+    "mtime": 1782492626.1850948,
+    "ast_hash": "b211b02962f20d5d48bcf9a11e7bae7b",
+    "semantic_hash": ""
+  },
+  "Robot/controllers/Phase_3/waypoints.txt": {
+    "mtime": 1782492549.8375008,
+    "ast_hash": "82e6c2a6d6ae06b47510cc9ff766772b",
+    "semantic_hash": ""
+  },
+  "graphify_output.txt": {
+    "mtime": 1782495516.278177,
+    "ast_hash": "89c877ff6ce6b87416268da17314c694",
+    "semantic_hash": ""
+  },
+  "Robot/worlds/.restaurant.jpg": {
+    "mtime": 1782492599.5966089,
+    "ast_hash": "14c6919ba602d202fd84cdf94052a4bd",
+    "semantic_hash": ""
+  }
+}

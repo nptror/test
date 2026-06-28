@@ -70,6 +70,23 @@ typedef struct {
     bool valid;
 } Waypoint;
 
+typedef struct {
+    char id[64];
+    char name[64];
+    char type[32];
+    double x, y, theta;
+    bool valid;
+} GraphNodeC;
+
+typedef struct {
+    char id[64];
+    char from[64];
+    char to[64];
+    bool bidirectional;
+    double weight;
+    bool valid;
+} GraphEdgeC;
+
 enum RobotState {
     STATE_IDLE,
     STATE_NAV_TO_TABLE,
@@ -114,6 +131,19 @@ unsigned short dist_to_obstacle[MAX_MAP_DIM][MAX_MAP_DIM];
 Waypoint waypoints[MAX_WAYPOINTS];
 int num_waypoints = 0;
 
+#define MAX_GRAPH_NODES 256
+#define MAX_GRAPH_EDGES 512
+GraphNodeC graph_nodes[MAX_GRAPH_NODES];
+GraphEdgeC graph_edges[MAX_GRAPH_EDGES];
+int num_graph_nodes = 0;
+int num_graph_edges = 0;
+
+static int graph_route[MAX_PATH_STEPS];
+static int graph_route_len = 0;
+static bool graph_route_requested = false;
+static bool graph_path_active = false;
+static bool path_is_graph = false;
+
 // --- Helper: is current target a Table waypoint? ---
 bool is_table_target(void) {
     return (strstr(current_target_name, "Table") != NULL ||
@@ -130,6 +160,9 @@ double get_stopping_distance(void) {
 bool is_velocity_near_zero(double vl, double vr) {
     return (fabs(vl) < 0.01 && fabs(vr) < 0.01);
 }
+
+static int dwa_debug_tick = 0;
+static int dwa_blocked_debug_tick = 0;
 
 // ------------------------------------------------------------
 // Heap functions
@@ -303,10 +336,18 @@ void write_path_to_file(double robot_x, double robot_y) {
     FILE *fp = fopen("robot_path.txt", "w");
     if (!fp) return;
     fprintf(fp, "%.4f %.4f\n", robot_x, robot_y);
-    for (int i = 0; i < path_len; i++) {
-        double wx, wy;
-        map_to_world(global_path[i].x, global_path[i].y, &wx, &wy);
-        fprintf(fp, "%.4f %.4f\n", wx, wy);
+    if (path_is_graph) {
+        for (int i = 0; i < path_len; i++) {
+            int node_idx = global_path[i].x;
+            if (node_idx < 0 || node_idx >= num_graph_nodes) continue;
+            fprintf(fp, "%s %.4f %.4f\n", graph_nodes[node_idx].name, graph_nodes[node_idx].x, graph_nodes[node_idx].y);
+        }
+    } else {
+        for (int i = 0; i < path_len; i++) {
+            double wx, wy;
+            map_to_world(global_path[i].x, global_path[i].y, &wx, &wy);
+            fprintf(fp, "%.4f %.4f\n", wx, wy);
+        }
     }
     fprintf(fp, "%.4f %.4f\n", target_x, target_y);
     fclose(fp);
@@ -336,28 +377,15 @@ void read_robot_command(double *target_x, double *target_y, bool *target_receive
     
     if (fscanf(fp, "%31s %31s %31s", cmd, target, direction) == 3) {
         if (strcmp(cmd, "NAV_TO_TABLE") == 0) {
-            if (strcmp(target, "robotStart") == 0 || strcmp(target, "START") == 0) {
-                *target_x = start_x;
-                *target_y = start_y;
+            if (resolve_graph_target(target, target_x, target_y, state)) {
                 *target_received = true;
                 *has_path = false;
-                *state = STATE_RETURN_TO_KITCHEN;
-                strncpy(current_target_name, "robotStart", sizeof(current_target_name) - 1);
-                printf("Command: NAV_TO_TABLE -> START (%.2f, %.2f)\n", *target_x, *target_y);
+                graph_route_len = 0;
+                graph_route_requested = true;
+                graph_path_active = false;
+                printf("Command: NAV_TO_TABLE -> %s (%.2f, %.2f)\n", target, *target_x, *target_y);
             } else {
-                for (int i = 0; i < num_waypoints; i++) {
-                    if (waypoints[i].valid && strcmp(waypoints[i].name, target) == 0) {
-                        *target_x = waypoints[i].x;
-                        *target_y = waypoints[i].y;
-                        *target_received = true;
-                        *has_path = false;
-                        *state = STATE_NAV_TO_TABLE;
-                        strncpy(current_target_name, waypoints[i].name, sizeof(current_target_name) - 1);
-                        current_target_name[sizeof(current_target_name) - 1] = '\0';
-                        printf("Command: NAV_TO_TABLE -> %s (%.2f, %.2f)\n", target, *target_x, *target_y);
-                        break;
-                    }
-                }
+                printf("Command: NAV_TO_TABLE target not found: %s\n", target);
             }
         } else if (strcmp(cmd, "MANUAL_MOVE") == 0) {
             *state = STATE_MANUAL_MOVE;
@@ -406,37 +434,309 @@ void read_robot_command(double *target_x, double *target_y, bool *target_receive
 }
 
 // ------------------------------------------------------------
-// Đọc waypoints từ file
-void load_wp(Waypoint *wp, int *cnt) {
-    FILE *fp = fopen("waypoints.txt", "r");
-    *cnt = 0;
+// Đọc graph.json (topology)
+static bool parse_graph_json(const char *path) {
+    FILE *fp = fopen(path, "r");
     if (!fp) {
-        printf("No waypoints.txt - using default (1.0,0.8) and (-0.8,1.5)\n");
-        return;
+        printf("No graph.json found.\n");
+        return false;
     }
-    char line[256];
-    while (fgets(line, 256, fp) && *cnt < MAX_WAYPOINTS) {
-        char name[64];
-        double x, y;
-        if (sscanf(line, "%[^:]: %lf %lf", name, &x, &y) == 3) {
-            strncpy(wp[*cnt].name, name, sizeof(wp[*cnt].name) - 1);
-            wp[*cnt].name[sizeof(wp[*cnt].name) - 1] = '\0';
-            wp[*cnt].x = x;
-            wp[*cnt].y = y;
-            wp[*cnt].theta = 0.0;
-            wp[*cnt].valid = true;
-            (*cnt)++;
-        } else if (sscanf(line, "%lf %lf", &x, &y) == 2) {
-            snprintf(wp[*cnt].name, sizeof(wp[*cnt].name), "Waypoint_%d", *cnt + 1);
-            wp[*cnt].x = x;
-            wp[*cnt].y = y;
-            wp[*cnt].theta = 0.0;
-            wp[*cnt].valid = true;
-            (*cnt)++;
+
+    fseek(fp, 0, SEEK_END);
+    long fsize = ftell(fp);
+    rewind(fp);
+    if (fsize <= 0 || fsize > 1024 * 1024) {
+        fclose(fp);
+        printf("graph.json size invalid: %ld\n", fsize);
+        return false;
+    }
+
+    char *buf = (char *)malloc((size_t)fsize + 1);
+    if (!buf) {
+        fclose(fp);
+        printf("Failed to allocate buffer for graph.json\n");
+        return false;
+    }
+    size_t read = fread(buf, 1, (size_t)fsize, fp);
+    buf[read] = '\0';
+    fclose(fp);
+
+    num_graph_nodes = 0;
+    num_graph_edges = 0;
+
+    const char *nodes_section = strstr(buf, "\"nodes\"");
+    const char *edges_section = strstr(buf, "\"edges\"");
+
+    if (nodes_section) {
+        const char *p = strchr(nodes_section, '[');
+        if (p) {
+            p++;
+            while ((p = strstr(p, "\"id\"")) && (edges_section == NULL || p < edges_section) && num_graph_nodes < MAX_GRAPH_NODES) {
+                const char *obj_start = p;
+                const char *obj_end = strchr(obj_start, '}');
+                if (!obj_end) break;
+
+                char id[64] = "";
+                char type[32] = "";
+                char name[64] = "";
+                double x = 0.0, y = 0.0, theta = 0.0;
+
+                const char *id_q1 = strchr(obj_start + 4, '"');
+                const char *id_q2 = id_q1 ? strchr(id_q1 + 1, '"') : NULL;
+                if (!id_q1 || !id_q2) break;
+                size_t id_len = (size_t)(id_q2 - id_q1 - 1);
+                if (id_len >= sizeof(id)) id_len = sizeof(id) - 1;
+                memcpy(id, id_q1 + 1, id_len);
+                id[id_len] = '\0';
+
+                const char *type_pos = strstr(obj_start, "\"type\"");
+                const char *name_pos = strstr(obj_start, "\"name\"");
+                const char *x_pos = strstr(obj_start, "\"x\"");
+                const char *y_pos = strstr(obj_start, "\"y\"");
+                if (!type_pos || !name_pos || !x_pos || !y_pos) break;
+
+                const char *type_q1 = strchr(type_pos + 6, '"');
+                const char *type_q2 = type_q1 ? strchr(type_q1 + 1, '"') : NULL;
+                const char *name_q1 = strchr(name_pos + 6, '"');
+                const char *name_q2 = name_q1 ? strchr(name_q1 + 1, '"') : NULL;
+                if (!type_q1 || !type_q2 || !name_q1 || !name_q2) break;
+                size_t type_len = (size_t)(type_q2 - type_q1 - 1);
+                size_t name_len = (size_t)(name_q2 - name_q1 - 1);
+                if (type_len >= sizeof(type)) type_len = sizeof(type) - 1;
+                if (name_len >= sizeof(name)) name_len = sizeof(name) - 1;
+                memcpy(type, type_q1 + 1, type_len);
+                type[type_len] = '\0';
+                memcpy(name, name_q1 + 1, name_len);
+                name[name_len] = '\0';
+
+                sscanf(x_pos, "\"x\"%*[^0-9.-]%lf", &x);
+                sscanf(y_pos, "\"y\"%*[^0-9.-]%lf", &y);
+                const char *theta_pos = strstr(obj_start, "\"theta\"");
+                if (theta_pos) sscanf(theta_pos, "\"theta\"%*[^0-9.-]%lf", &theta);
+
+                strncpy(graph_nodes[num_graph_nodes].id, id, sizeof(graph_nodes[num_graph_nodes].id) - 1);
+                strncpy(graph_nodes[num_graph_nodes].name, name, sizeof(graph_nodes[num_graph_nodes].name) - 1);
+                strncpy(graph_nodes[num_graph_nodes].type, type, sizeof(graph_nodes[num_graph_nodes].type) - 1);
+                graph_nodes[num_graph_nodes].x = x;
+                graph_nodes[num_graph_nodes].y = y;
+                graph_nodes[num_graph_nodes].theta = theta;
+                graph_nodes[num_graph_nodes].valid = true;
+                num_graph_nodes++;
+                p = obj_end + 1;
+            }
         }
     }
-    fclose(fp);
-    printf("Loaded %d waypoints.\n", *cnt);
+
+    if (edges_section) {
+        const char *p = strchr(edges_section, '[');
+        if (p) {
+            p++;
+            while ((p = strstr(p, "\"from\"")) && num_graph_edges < MAX_GRAPH_EDGES) {
+                const char *obj_start = p;
+                const char *obj_end = strchr(obj_start, '}');
+                if (!obj_end) break;
+
+                char id[64] = "";
+                char from[64] = "";
+                char to[64] = "";
+                bool bidirectional = true;
+                double weight = 1.0;
+
+                const char *id_pos = strstr(obj_start, "\"id\"");
+                if (id_pos) {
+                    const char *id_q1 = strchr(id_pos + 4, '"');
+                    const char *id_q2 = id_q1 ? strchr(id_q1 + 1, '"') : NULL;
+                    if (id_q1 && id_q2) {
+                        size_t id_len = (size_t)(id_q2 - id_q1 - 1);
+                        if (id_len >= sizeof(id)) id_len = sizeof(id) - 1;
+                        memcpy(id, id_q1 + 1, id_len);
+                        id[id_len] = '\0';
+                    }
+                }
+
+                const char *from_pos = strstr(obj_start, "\"from\"");
+                const char *to_pos = strstr(obj_start, "\"to\"");
+                if (!from_pos || !to_pos) break;
+                const char *from_q1 = strchr(from_pos + 6, '"');
+                const char *from_q2 = from_q1 ? strchr(from_q1 + 1, '"') : NULL;
+                const char *to_q1 = strchr(to_pos + 4, '"');
+                const char *to_q2 = to_q1 ? strchr(to_q1 + 1, '"') : NULL;
+                if (!from_q1 || !from_q2 || !to_q1 || !to_q2) break;
+                size_t from_len = (size_t)(from_q2 - from_q1 - 1);
+                size_t to_len = (size_t)(to_q2 - to_q1 - 1);
+                if (from_len >= sizeof(from)) from_len = sizeof(from) - 1;
+                if (to_len >= sizeof(to)) to_len = sizeof(to) - 1;
+                memcpy(from, from_q1 + 1, from_len);
+                from[from_len] = '\0';
+                memcpy(to, to_q1 + 1, to_len);
+                to[to_len] = '\0';
+
+                const char *w_pos = strstr(obj_start, "\"weight\"");
+                if (w_pos) sscanf(w_pos, "\"weight\"%*[^0-9.-]%lf", &weight);
+                const char *b_pos = strstr(obj_start, "\"bidirectional\"");
+                if (b_pos) {
+                    if (strstr(b_pos, "false") && (!strstr(b_pos, "true") || strstr(b_pos, "false") < strstr(b_pos, "true"))) {
+                        bidirectional = false;
+                    } else {
+                        bidirectional = true;
+                    }
+                }
+
+                strncpy(graph_edges[num_graph_edges].id, id, sizeof(graph_edges[num_graph_edges].id) - 1);
+                strncpy(graph_edges[num_graph_edges].from, from, sizeof(graph_edges[num_graph_edges].from) - 1);
+                strncpy(graph_edges[num_graph_edges].to, to, sizeof(graph_edges[num_graph_edges].to) - 1);
+                graph_edges[num_graph_edges].bidirectional = bidirectional;
+                graph_edges[num_graph_edges].weight = weight;
+                graph_edges[num_graph_edges].valid = true;
+                num_graph_edges++;
+                p = obj_end + 1;
+            }
+        }
+    }
+
+    free(buf);
+    printf("Loaded graph.json: %d nodes, %d edges\n", num_graph_nodes, num_graph_edges);
+    return num_graph_nodes > 0;
+}
+
+static int find_graph_node_index_by_name_or_id(const char *target) {
+    for (int i = 0; i < num_graph_nodes; i++) {
+        if (!graph_nodes[i].valid) continue;
+        if (strcmp(graph_nodes[i].id, target) == 0 || strcmp(graph_nodes[i].name, target) == 0) return i;
+        if (strstr(graph_nodes[i].id, target) != NULL || strstr(graph_nodes[i].name, target) != NULL) return i;
+    }
+    return -1;
+}
+
+static int find_nearest_graph_node(double x, double y) {
+    int best_idx = -1;
+    double best_dist = INFINITY;
+    for (int i = 0; i < num_graph_nodes; i++) {
+        if (!graph_nodes[i].valid) continue;
+        double d = hypot(graph_nodes[i].x - x, graph_nodes[i].y - y);
+        if (d < best_dist) {
+            best_dist = d;
+            best_idx = i;
+        }
+    }
+    return best_idx;
+}
+
+static int find_graph_edge_index_by_nodes(int from_idx, int to_idx) {
+    if (from_idx < 0 || to_idx < 0) return -1;
+    const char *from_id = graph_nodes[from_idx].id;
+    const char *to_id = graph_nodes[to_idx].id;
+    for (int i = 0; i < num_graph_edges; i++) {
+        if (!graph_edges[i].valid) continue;
+        if ((strcmp(graph_edges[i].from, from_id) == 0 && strcmp(graph_edges[i].to, to_id) == 0) ||
+            (graph_edges[i].bidirectional && strcmp(graph_edges[i].from, to_id) == 0 && strcmp(graph_edges[i].to, from_id) == 0)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void build_graph_route_from_indices(int start_idx, int goal_idx) {
+    graph_route_len = 0;
+    graph_path_active = false;
+
+    if (start_idx < 0 || goal_idx < 0) return;
+    if (start_idx == goal_idx) {
+        graph_route[graph_route_len++] = start_idx;
+        graph_path_active = true;
+        return;
+    }
+
+    static double dist[MAX_GRAPH_NODES];
+    static int prev[MAX_GRAPH_NODES];
+    static bool visited[MAX_GRAPH_NODES];
+    for (int i = 0; i < MAX_GRAPH_NODES; i++) {
+        dist[i] = INFINITY;
+        prev[i] = -1;
+        visited[i] = false;
+    }
+
+    dist[start_idx] = 0.0;
+
+    for (int iter = 0; iter < num_graph_nodes; iter++) {
+        int u = -1;
+        double best = INFINITY;
+        for (int i = 0; i < num_graph_nodes; i++) {
+            if (!visited[i] && graph_nodes[i].valid && dist[i] < best) {
+                best = dist[i];
+                u = i;
+            }
+        }
+        if (u < 0) break;
+        visited[u] = true;
+        if (u == goal_idx) break;
+
+        for (int e = 0; e < num_graph_edges; e++) {
+            if (!graph_edges[e].valid) continue;
+            int v = -1;
+            if (strcmp(graph_edges[e].from, graph_nodes[u].id) == 0) {
+                v = find_graph_node_index_by_name_or_id(graph_edges[e].to);
+            } else if (graph_edges[e].bidirectional && strcmp(graph_edges[e].to, graph_nodes[u].id) == 0) {
+                v = find_graph_node_index_by_name_or_id(graph_edges[e].from);
+            }
+            if (v < 0 || visited[v] || !graph_nodes[v].valid) continue;
+
+            double w = graph_edges[e].weight;
+            if (!(w > 0.0)) {
+                w = hypot(graph_nodes[v].x - graph_nodes[u].x, graph_nodes[v].y - graph_nodes[u].y);
+            }
+            double alt = dist[u] + w;
+            if (alt < dist[v]) {
+                dist[v] = alt;
+                prev[v] = u;
+            }
+        }
+    }
+
+    if (prev[goal_idx] == -1) {
+        printf("Graph path not found: %s -> %s\n", graph_nodes[start_idx].name, graph_nodes[goal_idx].name);
+        return;
+    }
+
+    int rev[MAX_GRAPH_NODES];
+    int len = 0;
+    for (int v = goal_idx; v >= 0 && len < MAX_GRAPH_NODES; v = prev[v]) {
+        rev[len++] = v;
+        if (v == start_idx) break;
+    }
+    if (len == 0 || rev[len - 1] != start_idx) {
+        printf("Graph route reconstruction failed.\n");
+        return;
+    }
+
+    for (int i = len - 1; i >= 0 && graph_route_len < MAX_PATH_STEPS; i--) {
+        graph_route[graph_route_len++] = rev[i];
+    }
+    graph_path_active = graph_route_len > 0;
+    printf("Graph route built: %d nodes\n", graph_route_len);
+}
+
+static bool resolve_graph_target(const char *target, double *x, double *y, enum RobotState *state) {
+    if (strcmp(target, "robotStart") == 0 || strcmp(target, "START") == 0) {
+        *x = start_x;
+        *y = start_y;
+        *state = STATE_RETURN_TO_KITCHEN;
+        strncpy(current_target_name, "robotStart", sizeof(current_target_name) - 1);
+        current_target_name[sizeof(current_target_name) - 1] = '\0';
+        return true;
+    }
+
+    int idx = find_graph_node_index_by_name_or_id(target);
+    if (idx >= 0) {
+        *x = graph_nodes[idx].x;
+        *y = graph_nodes[idx].y;
+        *state = STATE_NAV_TO_TABLE;
+        strncpy(current_target_name, graph_nodes[idx].name, sizeof(current_target_name) - 1);
+        current_target_name[sizeof(current_target_name) - 1] = '\0';
+        return true;
+    }
+
+    return false;
 }
 
 // ------------------------------------------------------------
@@ -517,9 +817,40 @@ bool check_path_blocked_by_dynamic(void) {
     for (int i = path_idx; i < check_end; i++) {
         int px = global_path[i].x;
         int py = global_path[i].y;
-        if (px >= 0 && px < MAP_SIZE_W && py >= 0 && py < MAP_SIZE_H) {
-            if (dynamic_map[py][px] < DYNAMIC_OBSTACLE_THRESHOLD) {
-                return true;
+        if (path_is_graph) {
+            if (px < 0 || px >= num_graph_nodes) continue;
+            int nx = px;
+            int ny = (i + 1 < path_len) ? global_path[i + 1].x : px;
+            if (ny < 0 || ny >= num_graph_nodes) continue;
+            double wx0 = graph_nodes[nx].x, wy0 = graph_nodes[nx].y;
+            double wx1 = graph_nodes[ny].x, wy1 = graph_nodes[ny].y;
+            int steps = (int)(hypot(wx1 - wx0, wy1 - wy0) / MAP_RESOLUTION);
+            if (steps < 1) steps = 1;
+            for (int s = 0; s <= steps; s++) {
+                double t = (double)s / (double)steps;
+                double wx = wx0 + (wx1 - wx0) * t;
+                double wy = wy0 + (wy1 - wy0) * t;
+                int mx, my;
+                world_to_map(wx, wy, &mx, &my);
+                if (mx >= 0 && mx < MAP_SIZE_W && my >= 0 && my < MAP_SIZE_H) {
+                    if (dynamic_map[my][mx] < DYNAMIC_OBSTACLE_THRESHOLD) {
+                        if (dwa_blocked_debug_tick++ % 5 == 0) {
+                            printf("Graph segment blocked by dynamic map at idx=%d cell=(%d,%d) dyn=%u threshold=%u\n",
+                                   i, mx, my, dynamic_map[my][mx], DYNAMIC_OBSTACLE_THRESHOLD);
+                        }
+                        return true;
+                    }
+                }
+            }
+        } else {
+            if (px >= 0 && px < MAP_SIZE_W && py >= 0 && py < MAP_SIZE_H) {
+                if (dynamic_map[py][px] < DYNAMIC_OBSTACLE_THRESHOLD) {
+                    if (dwa_blocked_debug_tick++ % 5 == 0) {
+                        printf("Path blocked by dynamic map at idx=%d cell=(%d,%d) dyn=%u threshold=%u\n",
+                               i, px, py, dynamic_map[py][px], DYNAMIC_OBSTACLE_THRESHOLD);
+                    }
+                    return true;
+                }
             }
         }
     }
@@ -839,12 +1170,12 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
                  double goal_x, double goal_y, double *lidar_ranges,
                  double *out_v, double *out_omega,
                  double dist_to_final_goal, bool near_table) {
-    double min_v = fmax(0.1, current_v - MAX_ACCEL * TIME_STEP / 1000.0);
+    double min_v = fmax(0.0, current_v - MAX_ACCEL * TIME_STEP / 1000.0);
     double max_v = fmin(MAX_SPEED, current_v + MAX_ACCEL * TIME_STEP / 1000.0);
 
     // When very close to a table target, allow lower min velocity for fine approach
     if (near_table && dist_to_final_goal < 0.3) {
-        min_v = fmax(0.02, current_v - MAX_ACCEL * TIME_STEP / 1000.0);
+        min_v = fmax(0.0, current_v - MAX_ACCEL * TIME_STEP / 1000.0);
     }
 
     double min_omega = fmax(-MAX_OMEGA, current_omega - MAX_OMEGA_ACCEL * TIME_STEP / 1000.0);
@@ -852,6 +1183,10 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
 
     double best_cost = INFINITY;
     double best_v = 0.0, best_omega = 0.0;
+    int valid_samples = 0;
+    int collision_samples = 0;
+    int clearance_samples = 0;
+    int fallback_reason_logged = 0;
 
     for (int i = 0; i <= V_SAMPLES; i++) {
         double v = min_v + (max_v - min_v) * i / V_SAMPLES;
@@ -865,6 +1200,8 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
                 best_v = v;
                 best_omega = omega;
             }
+            if (cost < 1e6) valid_samples++;
+            else collision_samples++;
         }
     }
 
@@ -875,22 +1212,33 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
         int fmx, fmy;
         world_to_map(fx, fy, &fmx, &fmy);
         bool front_blocked = !is_free(fmx, fmy);
+        double dx = goal_x - robot_x;
+        double dy = goal_y - robot_y;
+        double target_th = atan2(dy, dx);
+        double err = target_th - robot_theta;
+        while (err > M_PI) err -= 2 * M_PI;
+        while (err < -M_PI) err += 2 * M_PI;
 
         if (front_blocked) {
             best_v = 0.0;
-            best_omega = 0.0;
-            printf("DWA: all trajectories blocked, stopping for safety.\n");
+            best_omega = (fabs(err) > 0.15) ? fmax(-0.8, fmin(0.8, err * 1.5)) : 0.0;
+            if (fallback_reason_logged++ == 0) {
+                printf("DWA fallback: front blocked, rotating in place. err=%.3f goal=(%.2f,%.2f) front_cell=(%d,%d)\n",
+                       err, goal_x, goal_y, fmx, fmy);
+            }
         } else {
-            best_v = 0.2;
-            double dx = goal_x - robot_x;
-            double dy = goal_y - robot_y;
-            double target_th = atan2(dy, dx);
-            double err = target_th - robot_theta;
-            while (err > M_PI) err -= 2 * M_PI;
-            while (err < -M_PI) err += 2 * M_PI;
-            // Proportional steering instead of bang-bang ±0.5
+            best_v = 0.0;
             best_omega = fmax(-MAX_OMEGA, fmin(MAX_OMEGA, err * 1.5));
+            if (fallback_reason_logged++ == 0) {
+                printf("DWA fallback: all samples blocked, rotate first. err=%.3f goal=(%.2f,%.2f)\n",
+                       err, goal_x, goal_y);
+            }
         }
+    }
+
+    // If the chosen action is almost pure rotation, do not force forward motion.
+    if (fabs(best_v) < 0.03) {
+        best_v = 0.0;
     }
 
     // Post-filter: clamp omega change to OMEGA_SMOOTH_MAX per step
@@ -898,6 +1246,18 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
     if (omega_delta > OMEGA_SMOOTH_MAX) omega_delta = OMEGA_SMOOTH_MAX;
     if (omega_delta < -OMEGA_SMOOTH_MAX) omega_delta = -OMEGA_SMOOTH_MAX;
     best_omega = current_omega + omega_delta;
+
+    if ((dwa_debug_tick++ % 10) == 0) {
+        int gmx, gmy;
+        world_to_map(goal_x, goal_y, &gmx, &gmy);
+        printf("DWA debug: robot=(%.2f,%.2f,th=%.2f) goal=(%.2f,%.2f) map_goal=(%d,%d) v_range=[%.2f,%.2f] w_range=[%.2f,%.2f] valid=%d blocked=%d best=(%.2f,%.2f) cost=%.3f dist=%.3f near_table=%d\n",
+               robot_x, robot_y, robot_theta,
+               goal_x, goal_y, gmx, gmy,
+               min_v, max_v, min_omega, max_omega,
+               valid_samples, collision_samples,
+               best_v, best_omega, best_cost, dist_to_final_goal,
+               near_table ? 1 : 0);
+    }
 
     *out_v = best_v;
     *out_omega = best_omega;
@@ -960,6 +1320,9 @@ int main(int argc, char **argv) {
     last_right = wb_position_sensor_get_value(right_enc);
 
     load_wp(waypoints, &num_waypoints);
+    if (!parse_graph_json("graph.json")) {
+        printf("Graph load fallback: using legacy waypoints.txt\n");
+    }
 
     // Đọc điểm xuất phát từ meta
     start_x = 0.0;
@@ -1103,6 +1466,10 @@ int main(int argc, char **argv) {
                 if (check_path_blocked_by_dynamic()) {
                     printf("Dynamic obstacle on path! Re-planning...\n");
                     has_path = false;
+                    if (path_is_graph) {
+                        graph_path_active = true;
+                        graph_route_requested = true;
+                    }
                 }
             }
         }
@@ -1137,6 +1504,7 @@ int main(int argc, char **argv) {
             if (dist_to_goal < stop_dist) {
                 target_received = false;
                 has_path = false;
+                path_is_graph = false;
                 robot_state = STATE_IDLE;
                 printf("\n========== ARRIVED (already at goal, d=%.3f < %.3f) ==========\n",
                        dist_to_goal, stop_dist);
@@ -1148,32 +1516,39 @@ int main(int argc, char **argv) {
                 continue;
             }
 
-            int sx, sy, gx, gy;
-            world_to_map(robot_x, robot_y, &sx, &sy);
-            world_to_map(target_x, target_y, &gx, &gy);
-
-            // Nếu start và goal cùng ô pixel, coi như đã đến
-            if (sx == gx && sy == gy) {
-                target_received = false;
-                has_path = false;
-                robot_state = STATE_IDLE;
-                printf("\n========== ARRIVED (same cell) ==========\n");
-                current_v = 0.0; current_omega = 0.0;
-                wb_motor_set_velocity(left_motor, 0.0);
-                wb_motor_set_velocity(right_motor, 0.0);
-                clear_path_file();
-                write_robot_state(robot_x, robot_y, robot_theta, 0.0, 0.0, get_state_string(robot_state));
-                continue;
+            if (!graph_route_requested) {
+                graph_route_requested = true;
             }
 
-            if (plan_path(sx, sy, gx, gy)) {
-                printf("Path found, %d waypoints.\n", path_len);
+            int goal_node_idx = find_graph_node_index_by_name_or_id(current_target_name);
+            int start_node_idx = find_nearest_graph_node(robot_x, robot_y);
+            graph_route_requested = false;
+            graph_route_len = 0;
+            graph_path_active = false;
+
+            if (goal_node_idx >= 0 && start_node_idx >= 0) {
+                build_graph_route_from_indices(start_node_idx, goal_node_idx);
+            }
+
+            if (graph_path_active && graph_route_len > 0) {
                 has_path = true;
+                path_is_graph = true;
+                path_len = graph_route_len;
+                path_idx = 0;
+                for (int i = 0; i < graph_route_len && path_len < MAX_PATH_STEPS; i++) {
+                    global_path[i].x = graph_route[i];
+                    global_path[i].y = -1;
+                }
+                printf("Graph path activated: %d nodes.\n", graph_route_len);
                 write_path_to_file(robot_x, robot_y);
+                graph_path_active = false;
             } else {
                 target_received = false;
-                printf("No path! Cannot reach target (%.2f, %.2f).\n", target_x, target_y);
+                has_path = false;
+                path_is_graph = false;
+                printf("No graph path! Cannot reach target (%.2f, %.2f).\n", target_x, target_y);
                 clear_path_file();
+                continue;
             }
         }
 
@@ -1184,21 +1559,52 @@ int main(int argc, char **argv) {
         bool near_table = is_table_target();
 
         // ============================================================
-        // Xác định local_goal và cập nhật waypoint
+        // Xác định local_goal và cập nhật waypoint/segment
         double local_goal_x = target_x, local_goal_y = target_y;
         if (has_path && path_idx < path_len) {
-            int wx = global_path[path_idx].x;
-            int wy = global_path[path_idx].y;
-            double current_wp_x, current_wp_y;
-            map_to_world(wx, wy, &current_wp_x, &current_wp_y);
-            double dist_to_current = hypot(current_wp_x - robot_x, current_wp_y - robot_y);
+            if (!path_is_graph) {
+                has_path = false;
+                target_received = false;
+                robot_state = STATE_IDLE;
+                path_len = 0;
+                path_idx = 0;
+                graph_route_len = 0;
+                graph_route_requested = false;
+                graph_path_active = false;
+                clear_path_file();
+                continue;
+            }
 
-            // For intermediate waypoints: use generous accept distance
-            // For the LAST waypoint: use dynamic stopping distance
+            int current_node_idx = global_path[path_idx].x;
+            if (current_node_idx < 0 || current_node_idx >= num_graph_nodes || !graph_nodes[current_node_idx].valid) {
+                has_path = false;
+                target_received = false;
+                robot_state = STATE_IDLE;
+                path_is_graph = false;
+                path_len = 0;
+                path_idx = 0;
+                graph_route_len = 0;
+                graph_route_requested = false;
+                graph_path_active = false;
+                clear_path_file();
+                continue;
+            }
+
+            int next_node_idx = (path_idx + 1 < path_len) ? global_path[path_idx + 1].x : current_node_idx;
+            if (next_node_idx < 0 || next_node_idx >= num_graph_nodes || !graph_nodes[next_node_idx].valid) {
+                next_node_idx = current_node_idx;
+            }
+
+            double current_wp_x = graph_nodes[current_node_idx].x;
+            double current_wp_y = graph_nodes[current_node_idx].y;
+            double next_wp_x = graph_nodes[next_node_idx].x;
+            double next_wp_y = graph_nodes[next_node_idx].y;
+            double seg_x = next_wp_x - current_wp_x;
+            double seg_y = next_wp_y - current_wp_y;
+            double seg_len = hypot(seg_x, seg_y);
+            double dist_to_current = hypot(current_wp_x - robot_x, current_wp_y - robot_y);
             bool is_last_wp = (path_idx >= path_len - 1);
             double wp_accept = is_last_wp ? stop_dist : WAYPOINT_ACCEPT_DIST;
-
-            // Table final arrival: also check velocity (DWA deceleration)
             bool velocity_stopped = is_velocity_near_zero(current_v, current_omega);
             bool final_arrived = false;
 
@@ -1206,10 +1612,8 @@ int main(int argc, char **argv) {
                 if (dist_to_final < stop_dist) {
                     final_arrived = true;
                 } else if (near_table && dist_to_final < 0.15 && velocity_stopped) {
-                    // DWA has decelerated to near-zero near a table — accept arrival
                     final_arrived = true;
-                    printf("Table arrival: DWA decelerated, d=%.3f v=%.4f\n",
-                           dist_to_final, current_v);
+                    printf("Table arrival: DWA decelerated, d=%.3f v=%.4f\n", dist_to_final, current_v);
                 }
             }
 
@@ -1218,76 +1622,75 @@ int main(int argc, char **argv) {
                     has_path = false;
                     target_received = false;
                     robot_state = STATE_IDLE;
-                    printf("\n========== ARRIVED (d=%.3f, threshold=%.3f) ==========\n",
-                           dist_to_final, stop_dist);
-                    current_v = 0;
-                    current_omega = 0;
-                    wb_motor_set_velocity(left_motor, 0);
-                    wb_motor_set_velocity(right_motor, 0);
+                    path_is_graph = false;
+                    path_len = 0;
+                    path_idx = 0;
+                    graph_route_len = 0;
+                    graph_route_requested = false;
+                    graph_path_active = false;
+                    printf("\n========== ARRIVED (d=%.3f, threshold=%.3f) ==========\n", dist_to_final, stop_dist);
+                    current_v = 0.0;
+                    current_omega = 0.0;
+                    wb_motor_set_velocity(left_motor, 0.0);
+                    wb_motor_set_velocity(right_motor, 0.0);
                     clear_path_file();
                     write_robot_state(robot_x, robot_y, robot_theta, 0.0, 0.0, get_state_string(robot_state));
                     continue;
-                } else {
+                }
+                path_idx++;
+                continue;
+            }
+
+            double proj_t = 0.0;
+            if (seg_len > 0.001) {
+                double rx = robot_x - current_wp_x;
+                double ry = robot_y - current_wp_y;
+                proj_t = (rx * seg_x + ry * seg_y) / (seg_len * seg_len);
+            }
+            if (proj_t < 0.0) proj_t = 0.0;
+            if (proj_t > 1.0) proj_t = 1.0;
+
+            if (path_idx < path_len - 1) {
+                double advance_threshold = near_table ? 0.75 : 0.6;
+                if (proj_t > advance_threshold) {
                     path_idx++;
                     continue;
                 }
             }
 
-            // Segment-based advancement for intermediate waypoints only
-            bool should_advance = false;
-            if (path_idx < path_len - 1) {
-                int next_wx = global_path[path_idx + 1].x;
-                int next_wy = global_path[path_idx + 1].y;
-                double next_wp_x, next_wp_y;
-                map_to_world(next_wx, next_wy, &next_wp_x, &next_wp_y);
-                double seg_x = next_wp_x - current_wp_x;
-                double seg_y = next_wp_y - current_wp_y;
-                double seg_len = hypot(seg_x, seg_y);
-                if (seg_len > 0.001) {
-                    double rx = robot_x - current_wp_x;
-                    double ry = robot_y - current_wp_y;
-                    double dot = rx * seg_x + ry * seg_y;
-                    if (dot > 0.5 * seg_len * seg_len) {
-                        should_advance = true;
-                    }
-                }
+            if (seg_len > 0.001) {
+                double progress_goal = proj_t + 0.35;
+                if (progress_goal > 1.0) progress_goal = 1.0;
+                local_goal_x = current_wp_x + seg_x * progress_goal;
+                local_goal_y = current_wp_y + seg_y * progress_goal;
+            } else {
+                local_goal_x = next_wp_x;
+                local_goal_y = next_wp_y;
             }
 
-            if (should_advance && path_idx < path_len - 1) {
-                path_idx++;
-                continue;
-            }
-
-            // Look-ahead: when close to final target on a table, reduce look-ahead
-            // so DWA aims precisely at the delivery pin
-            int look_ahead = 4;
             if (near_table && dist_to_final < 0.5) {
-                look_ahead = 1;
-            } else if (near_table && dist_to_final < 1.0) {
-                look_ahead = 2;
-            }
-            int look_ahead_idx = path_idx + look_ahead;
-            if (look_ahead_idx >= path_len) look_ahead_idx = path_len - 1;
-
-            // When on the last few waypoints near a table, use the actual target
-            // coordinates instead of the map-quantized waypoint for precision
-            if (near_table && look_ahead_idx >= path_len - 2 && dist_to_final < 0.5) {
                 local_goal_x = target_x;
                 local_goal_y = target_y;
-            } else {
-                int nwx = global_path[look_ahead_idx].x;
-                int nwy = global_path[look_ahead_idx].y;
-                map_to_world(nwx, nwy, &local_goal_x, &local_goal_y);
             }
 
+            if (check_path_blocked_by_dynamic()) {
+                printf("Graph segment blocked, requesting re-route.\n");
+                graph_route_requested = true;
+                graph_path_active = true;
+                has_path = false;
+                path_is_graph = false;
+                path_len = 0;
+                path_idx = 0;
+                continue;
+            }
         } else if (!has_path && target_received) {
             local_goal_x = target_x;
             local_goal_y = target_y;
         } else {
             current_v = 0.0;
             current_omega = 0.0;
-            wb_motor_set_velocity(left_motor, 0);
-            wb_motor_set_velocity(right_motor, 0);
+            wb_motor_set_velocity(left_motor, 0.0);
+            wb_motor_set_velocity(right_motor, 0.0);
             write_robot_state(robot_x, robot_y, robot_theta, 0.0, 0.0, get_state_string(robot_state));
             continue;
         }

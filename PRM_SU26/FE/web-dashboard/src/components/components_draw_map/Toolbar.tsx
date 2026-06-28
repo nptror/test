@@ -1,16 +1,20 @@
 // src/components/components_draw_map/Toolbar.tsx
+import { useMemo } from 'react';
+import { Alert, Button, Popconfirm } from 'antd';
 import { useMapStore } from '../../store/mapStore';
 import { exportPGM } from '../../utils/exportPGM';
 import { exportWaypoints } from '../../utils/exportWaypoints';
+import { exportGraph } from '../../utils/exportGraph';
 import { validateRoute } from '../../utils/astar';
+import { validateGraph, getGraphValidationSummary } from '../../utils/validateGraph';
 import { pixelToWorld } from '../../utils/coordinateUtils';
 
-// Không cần import MapStoreState nữa
-
 export const Toolbar = () => {
-  // TypeScript tự suy ra state là MapState từ create<MapState>
   const objects = useMapStore((state) => state.objects);
-  const floorSize = useMapStore((s: any) => s.floorSize) || 20; // nếu chưa có thì mặc định 20
+  const graphNodes = useMapStore((state) => state.graphNodes);
+  const graphEdges = useMapStore((state) => state.graphEdges);
+  const resetMap = useMapStore((state) => state.resetMap);
+  const floorSize = useMapStore((s: any) => s.floorSize) || 20;
   const resolution = useMapStore((s: any) => s.resolution) || 0.05;
 
 
@@ -35,12 +39,25 @@ export const Toolbar = () => {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportGraph = () => {
+    const content = exportGraph(graphNodes, graphEdges, floorSize, resolution);
+    const blob = new Blob([content], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'graph.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const graphValidation = useMemo(() => validateGraph(objects, graphNodes, graphEdges, floorSize, resolution), [objects, graphNodes, graphEdges, floorSize, resolution]);
+  const graphValidationSummary = useMemo(() => getGraphValidationSummary(graphValidation), [graphValidation]);
+
   const handleValidateNavigation = () => {
-    // Lúc này objects là MapObject[], nên obj được suy ra là MapObject
     const startObj = objects.find((obj) => obj.type === 'robotStart');
     const tables = objects.filter((obj) => obj.type === 'table');
     if (!startObj) {
-      alert('Chưa đặt vị trí xuất phát (robotStart)');
+      window.alert('Chưa đặt vị trí xuất phát (robotStart)');
       return;
     }
     const startWorld = {
@@ -63,13 +80,13 @@ export const Toolbar = () => {
 
       const result = validateRoute(startWorld, goalWorld, objects, floorSize, resolution);
       if (!result.valid) {
-        alert(`Không tìm được đường đến bàn ${table.name || table.id}`);
+        window.alert(`Không tìm được đường đến bàn ${table.name || table.id}`);
         allValid = false;
         break;
       }
     }
     if (allValid) {
-      alert('✅ Tất cả các bàn đều có đường đi!');
+      window.alert('✅ Tất cả các bàn đều có đường đi!');
     }
   };
 
@@ -86,14 +103,15 @@ export const Toolbar = () => {
       robot_start_world_y = worldPos.y;
     }
 
-    // Lấy danh sách waypoint nếu có (bạn có thể thêm store cho waypoints)
     const waypointsText = exportWaypoints(objects, floorSize, resolution);
+    const graphText = exportGraph(graphNodes, graphEdges, floorSize, resolution);
     const payload = {
       floorSize,
       resolution,
       robot_start_world_x,
       robot_start_world_y,
       objects,
+      graph: graphText,
       waypoints: waypointsText, // <--- Đính kèm chuỗi text vào payload
     };
     console.log(">>> [FE LOG] Dữ liệu chuẩn bị gửi lên Server:", {
@@ -102,7 +120,10 @@ export const Toolbar = () => {
       start_x: payload.robot_start_world_x,
       start_y: payload.robot_start_world_y,
       total_objects: payload.objects.length,
-      waypoints_text: payload.waypoints // Xem chuỗi text có bị lặp từ không
+      total_graph_nodes: graphNodes.length,
+      total_graph_edges: graphEdges.length,
+      waypoints_text: payload.waypoints,
+      graph_text: payload.graph
     });
     try {
       const response = await fetch('http://localhost:3001/api/upload', {
@@ -124,10 +145,46 @@ export const Toolbar = () => {
 
   return (
     <div className="toolbar">
-      <button onClick={handleExportPGM}>Export PGM</button>
-      <button onClick={handleExportWaypoints}>Export Waypoints</button>
-      <button onClick={handleValidateNavigation}>Validate Navigation</button>
-      <button onClick={handleSendToRobot}>Gửi dữ liệu đến robot</button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <button onClick={handleExportPGM}>Export PGM</button>
+          <button onClick={handleExportWaypoints}>Export Waypoints</button>
+          <button onClick={handleExportGraph}>Export Graph</button>
+          <button onClick={handleValidateNavigation}>Validate Navigation</button>
+          <button onClick={handleSendToRobot}>Gửi dữ liệu đến robot</button>
+          <Popconfirm
+            title="Reset map?"
+            description="Xóa toàn bộ state hiện tại, bao gồm objects, graph nodes, graph edges và dữ liệu lưu local."
+            okText="Reset"
+            cancelText="Cancel"
+            okButtonProps={{ danger: true }}
+            onConfirm={resetMap}
+          >
+            <Button danger>Reset map</Button>
+          </Popconfirm>
+        </div>
+        <Alert
+          showIcon
+          type={graphValidation.valid ? 'success' : 'error'}
+          message={graphValidation.valid ? 'Graph hợp lệ' : `Graph có ${graphValidationSummary.totalIssues} lỗi`}
+          description={
+            graphValidation.valid
+              ? 'Node, edge, robotStart và đường đi tới table đều hợp lệ.'
+              : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {graphValidation.issues.slice(0, 5).map((issue, index) => (
+                    <div key={`${issue.type}-${issue.nodeId || issue.edgeId || index}`}>
+                      {issue.message}
+                    </div>
+                  ))}
+                  {graphValidation.issues.length > 5 && (
+                    <div>… và {graphValidation.issues.length - 5} lỗi nữa.</div>
+                  )}
+                </div>
+              )
+          }
+        />
+      </div>
     </div>
   );
 };

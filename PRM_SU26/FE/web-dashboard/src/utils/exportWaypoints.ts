@@ -9,15 +9,18 @@ import { pixelToWorld } from './coordinateUtils';
  */
 export function exportWaypoints(objects: MapObject[], floorSize: number, resolution: number): string {
   const lines: string[] = [];
+  let robotStartExported = false;
 
   objects.forEach((obj) => {
     // Chỉ lấy các điểm chức năng đỗ xe hoặc ghim giao hàng của bàn
     if (obj.type === 'robotStart' || obj.type === 'kitchen' || obj.type === 'charging') {
+      if (obj.type === 'robotStart' && robotStartExported) return;
       const cx = obj.x + obj.width / 2;
       const cy = obj.y + obj.height / 2;
       const world = pixelToWorld(cx, cy, floorSize, resolution);
       const name = `${obj.type.charAt(0).toUpperCase() + obj.type.slice(1)}_${obj.id.replace(/\s+/g, '_')}`;
       lines.push(`${name}: ${world.x.toFixed(2)} ${world.y.toFixed(2)}`);
+      if (obj.type === 'robotStart') robotStartExported = true;
     } 
     else if (obj.type === 'table') {
       let cx = obj.x + obj.width / 2;

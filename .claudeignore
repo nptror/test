@@ -1,0 +1,28 @@
+# Chặn toàn bộ các thư mục chứa file biên dịch (nếu làm C/C++)
+build/
+Debug/
+Release/
+
+# Chặn thư viện hoặc các module bên thứ ba
+node_modules/
+vendor/
+BE/
+customer-mobile/
+define_name/
+Phase_1/
+Phase_2/
+Phase_2_4Wheel/
+robot_test/
+test02/
+test01_distanc_sensor/
+test3_tun2m/
+test4_lidar/
+zzz_Trash/
+
+# Chặn các file chứa dữ liệu nhạy cảm (mật khẩu, API key)
+.env
+config.json
+
+# Chặn toàn bộ các file nhật ký hoặc file tạm bằng dấu sao (*)
+*.log
+*.tmp

@@ -1,27 +1,29 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { Tag, Typography } from 'antd';
 import {
+  Armchair,
   BatteryCharging,
   Bot,
   ChefHat,
+  CircleDot,
   DoorOpen,
   MapPin,
   Move,
   ShieldAlert,
   Square,
-  Armchair,
 } from 'lucide-react';
-import type { MapObject, MapObjectType } from '@/types/map';
+import type { MapObject, MapObjectType, GraphEdge, MapTool } from '@/types/map';
+import type { GraphNode } from '@/types/graph';
 import { useMapStore } from '@/store/mapStore';
 import { Toolbox } from './Toolbox';
-import { getMapPixels, worldToPixel } from '@/utils/coordinateUtils';
+import { getMapPixels, pixelToWorld, worldToPixel } from '@/utils/coordinateUtils';
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.1;
 const SNAP_THRESHOLD = 5;
 
-const toolLabels: Record<string, string> = {
+const toolLabels: Record<MapTool, string> = {
   select: 'Select',
   pan: 'Pan',
   table: 'Table',
@@ -33,6 +35,9 @@ const toolLabels: Record<string, string> = {
   restricted: 'Restricted Area',
   door: 'Door',
   robotStart: 'Start Position',
+  waypoint: 'Waypoint',
+  node: 'Graph Node',
+  edge: 'Connect Edge',
 };
 
 function getObjectIcon(type: MapObjectType) {
@@ -161,7 +166,7 @@ function MapObjectShape({
       )}
 
       {/* Điểm giao hàng (Delivery Point) cho bàn */}
-      {selected && object.type === 'table' && (
+      {object.type === 'table' && (
         <div
           className="delivery-point-handle"
           style={{
@@ -395,19 +400,64 @@ function getObjectColor(type: MapObjectType): string {
 }
 
 let objectCounter = 100;
+let graphNodeCounter = 1;
+let graphEdgeCounter = 1;
+
+function canvasToWorldPoint(
+  x: number,
+  y: number,
+  floorSize: number,
+  resolution: number,
+  panX: number,
+  panY: number,
+  zoom: number,
+) {
+  const px = (x - panX) / zoom;
+  const py = (y - panY) / zoom;
+  return pixelToWorld(px, py, floorSize, resolution);
+}
+
+function worldToCanvasPoint(
+  x: number,
+  y: number,
+  floorSize: number,
+  resolution: number,
+  panX: number,
+  panY: number,
+  zoom: number,
+) {
+  const px = worldToPixel(x, y, floorSize, resolution);
+  return {
+    x: px.x * zoom + panX,
+    y: px.y * zoom + panY,
+  };
+}
 
 export function MapCanvas() {
   const objects = useMapStore((s) => s.objects);
+  const graphNodes = useMapStore((s) => s.graphNodes);
+  const graphEdges = useMapStore((s) => s.graphEdges);
   const selectedObjectId = useMapStore((s) => s.selectedObjectId);
+  const selectedGraphNodeId = useMapStore((s) => s.selectedGraphNodeId);
+  const selectedGraphEdgeId = useMapStore((s) => s.selectedGraphEdgeId);
+  const edgeDraftFromNodeId = useMapStore((s) => s.edgeDraftFromNodeId);
   const selectedTool = useMapStore((s) => s.selectedTool);
   const zoom = useMapStore((s) => s.zoom);
   const floorSize = useMapStore((s: any) => s.floorSize) || 20;
   const resolution = useMapStore((s: any) => s.resolution) || 0.05;
   const setZoom = useMapStore((s) => s.setZoom);
   const setSelectedObject = useMapStore((s) => s.setSelectedObject);
+  const setSelectedGraphNode = useMapStore((s) => s.setSelectedGraphNode);
+  const setSelectedGraphEdge = useMapStore((s) => s.setSelectedGraphEdge);
+  const setEdgeDraftFromNodeId = useMapStore((s) => s.setEdgeDraftFromNodeId);
   const addObject = useMapStore((s) => s.addObject);
   const updateObject = useMapStore((s) => s.updateObject);
   const removeObject = useMapStore((s) => s.removeObject);
+  const addGraphNode = useMapStore((s) => s.addGraphNode);
+  const updateGraphNode = useMapStore((s) => s.updateGraphNode);
+  const addGraphEdge = useMapStore((s) => s.addGraphEdge);
+  const removeGraphNode = useMapStore((s) => s.removeGraphNode);
+  const removeGraphEdge = useMapStore((s) => s.removeGraphEdge);
 
   const [robotState, setRobotState] = useState<{ x: number; y: number; theta: number; status: string } | null>(null);
   const [robotPath, setRobotPath] = useState<{ x: number; y: number }[]>([]);
@@ -462,6 +512,9 @@ export function MapCanvas() {
     startAngle: number;
     startDeliveryOffsetX?: number;
     startDeliveryOffsetY?: number;
+    nodeStartX?: number;
+    nodeStartY?: number;
+    kind: 'object' | 'node' | null;
   }>({
     id: null,
     offsetX: 0,
@@ -475,6 +528,9 @@ export function MapCanvas() {
     startAngle: 0,
     startDeliveryOffsetX: 0,
     startDeliveryOffsetY: 0,
+    nodeStartX: 0,
+    nodeStartY: 0,
+    kind: null,
   });
 
   // Snap cho tường
@@ -583,6 +639,22 @@ export function MapCanvas() {
         const canvasX = (e.clientX - rect.left - pan.x) / zoom;
         const canvasY = (e.clientY - rect.top - pan.y) / zoom;
         const obj = objects.find(o => o.id === dragState.id);
+        const node = graphNodes.find((n) => n.id === dragState.id);
+        if (!obj && !node) return;
+
+        if (dragState.kind === 'node' && node) {
+          const pointerWorld = pixelToWorld(canvasX, canvasY, floorSize, resolution);
+          const nextX = pointerWorld.x - dragState.offsetX;
+          const nextY = pointerWorld.y - dragState.offsetY;
+          const anchorX = dragState.nodeStartX ?? node.x;
+          const anchorY = dragState.nodeStartY ?? node.y;
+          const deltaX = nextX - anchorX;
+          const deltaY = nextY - anchorY;
+          if (Math.hypot(deltaX, deltaY) < 0.02) return;
+          updateGraphNode(dragState.id, { x: nextX, y: nextY });
+          return;
+        }
+
         if (!obj) return;
 
         // Xử lý điểm giao hàng
@@ -706,6 +778,9 @@ export function MapCanvas() {
       startAngle: 0,
       startDeliveryOffsetX: 0,
       startDeliveryOffsetY: 0,
+      nodeStartX: 0,
+      nodeStartY: 0,
+      kind: null,
     });
   }, []);
 
@@ -733,30 +808,41 @@ export function MapCanvas() {
     };
   }, [removeObject]);
 
-  // Click canvas
+  useEffect(() => {
+    graphNodeCounter = Math.max(graphNodeCounter, graphNodes.length + 1);
+    graphEdgeCounter = Math.max(graphEdgeCounter, graphEdges.length + 1);
+  }, [graphEdges.length, graphNodes.length]);
+
   // Click canvas
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent) => {
       if (isPanning.current || dragState.id) return;
-      if (selectedTool === 'select' || selectedTool === 'pan') {
-        setSelectedObject(null);
-        return;
-      }
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      let x = (e.clientX - rect.left - pan.x) / zoom;
-      let y = (e.clientY - rect.top - pan.y) / zoom;
+
+      const canvasX = e.clientX - rect.left;
+      const canvasY = e.clientY - rect.top;
+      const worldPoint = canvasToWorldPoint(canvasX, canvasY, floorSize, resolution, pan.x, pan.y, zoom);
+      const gridLocalX = (canvasX - pan.x) / zoom;
+      const gridLocalY = (canvasY - pan.y) / zoom;
+
+      if (selectedTool === 'select' || selectedTool === 'pan') {
+        setSelectedObject(null);
+        setSelectedGraphNode(null);
+        setSelectedGraphEdge(null);
+        setEdgeDraftFromNodeId(null);
+        return;
+      }
 
       const tool = selectedTool as MapObjectType;
-      if (objectPhysicalSizes[tool]) {
+      if (tool !== 'robotStart' && objectPhysicalSizes[tool]) {
         objectCounter++;
         const defaultSize = objectPhysicalSizes[tool];
         const widthPx = Math.round(defaultSize.width / resolution);
         const heightPx = Math.round(defaultSize.height / resolution);
         const mapSize = getMapPixels(floorSize, resolution);
-        // Clamp tọa độ để object luôn nằm trong khu vực vẽ
-        const clampedX = Math.max(0, Math.min(mapSize - widthPx, Math.round(x - widthPx / 2)));
-        const clampedY = Math.max(0, Math.min(mapSize - heightPx, Math.round(y - heightPx / 2)));
+        const clampedX = Math.max(0, Math.min(mapSize - widthPx, Math.round(gridLocalX - widthPx / 2)));
+        const clampedY = Math.max(0, Math.min(mapSize - heightPx, Math.round(gridLocalY - heightPx / 2)));
         const newObj: MapObject = {
           id: `${tool}-${objectCounter}`,
           type: tool,
@@ -773,9 +859,94 @@ export function MapCanvas() {
           newObj.deliveryOffsetY = 30;
         }
         addObject(newObj);
+        return;
+      }
+
+      if (selectedTool === 'waypoint' || selectedTool === 'node') {
+        graphNodeCounter++;
+        const nodeType = 'waypoint';
+        const nodeId = `${nodeType}-${graphNodeCounter}`;
+        const nodeName = `WP ${graphNodeCounter}`;
+        addGraphNode({
+          id: nodeId,
+          type: nodeType,
+          name: nodeName,
+          x: worldPoint.x,
+          y: worldPoint.y,
+          theta: 0,
+        });
+        return;
+      }
+
+      if (selectedTool === 'robotStart') {
+        const existingRobotStart = graphNodes.find((node) => node.type === 'robotStart');
+        if (existingRobotStart) {
+          updateGraphNode(existingRobotStart.id, { x: worldPoint.x, y: worldPoint.y });
+        } else {
+          addObject({
+            id: `robotStart-${objectCounter + 1}`,
+            type: 'robotStart',
+            name: 'Robot Start',
+            x: Math.round(worldPoint.x - 5),
+            y: Math.round(worldPoint.y - 5),
+            width: Math.round(0.5 / resolution),
+            height: Math.round(0.5 / resolution),
+            rotation: 0,
+          });
+        }
+        return;
+      }
+
+      if (selectedTool === 'edge') {
+        const nodeUnderCursor = graphNodes.find((node) => {
+          const p = worldToPixel(node.x, node.y, floorSize, resolution);
+          return Math.hypot(p.x - canvasX, p.y - canvasY) <= 16;
+        });
+        if (!nodeUnderCursor) return;
+
+        if (!edgeDraftFromNodeId) {
+          setEdgeDraftFromNodeId(nodeUnderCursor.id);
+          setSelectedGraphNode(nodeUnderCursor.id);
+          return;
+        }
+
+        if (edgeDraftFromNodeId === nodeUnderCursor.id) {
+          setEdgeDraftFromNodeId(null);
+          return;
+        }
+
+        graphEdgeCounter++;
+        addGraphEdge({
+          id: `edge-${graphEdgeCounter}`,
+          from: edgeDraftFromNodeId,
+          to: nodeUnderCursor.id,
+          bidirectional: true,
+          weight: Math.hypot(
+            nodeUnderCursor.x - (graphNodes.find((n) => n.id === edgeDraftFromNodeId)?.x || 0),
+            nodeUnderCursor.y - (graphNodes.find((n) => n.id === edgeDraftFromNodeId)?.y || 0),
+          ),
+        });
       }
     },
-    [selectedTool, zoom, pan, setSelectedObject, addObject, dragState],
+    [
+      addGraphEdge,
+      addGraphNode,
+      dragState,
+      edgeDraftFromNodeId,
+      floorSize,
+      graphNodes,
+      pan.x,
+      pan.y,
+      resolution,
+      selectedTool,
+      setEdgeDraftFromNodeId,
+      setSelectedGraphEdge,
+      setSelectedGraphNode,
+      setSelectedObject,
+      updateGraphNode,
+      addObject,
+      zoom,
+    ],
   );
   const handleObjectDragStart = useCallback(
     (e: React.PointerEvent, id: string) => {
@@ -798,6 +969,7 @@ export function MapCanvas() {
         startAngle: 0,
         startDeliveryOffsetX: obj.deliveryOffsetX || 0,
         startDeliveryOffsetY: obj.deliveryOffsetY || 0,
+        kind: 'object',
       });
       e.preventDefault();
     },
@@ -829,6 +1001,7 @@ export function MapCanvas() {
           handle: 'rotate',
           initialRotation: obj.rotation || 0,
           startAngle: Math.round(angle / 5) * 5,
+          kind: 'object',
         });
         e.preventDefault();
         return;
@@ -848,6 +1021,7 @@ export function MapCanvas() {
         startAngle: 0,
         startDeliveryOffsetX: obj.deliveryOffsetX || 0,
         startDeliveryOffsetY: obj.deliveryOffsetY || 0,
+        kind: 'object',
       });
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
       e.preventDefault();
@@ -869,6 +1043,7 @@ export function MapCanvas() {
         <Typography.Text strong>Canvas</Typography.Text>
         <Tag color="blue">{toolLabels[selectedTool]}</Tag>
         <Tag>{Math.round(zoom * 100)}%</Tag>
+        {selectedTool === 'edge' && edgeDraftFromNodeId && <Tag color="orange">Edge from {edgeDraftFromNodeId}</Tag>}
         {dragState.id && <Tag color="green">Dragging</Tag>}
       </div>
       <div
@@ -901,6 +1076,140 @@ export function MapCanvas() {
             boxShadow: '0 0 10px rgba(0,0,0,0.1)',
           }}
         >
+          {graphEdges.map((edge) => {
+            const from = graphNodes.find((node) => node.id === edge.from);
+            const to = graphNodes.find((node) => node.id === edge.to);
+            if (!from || !to) return null;
+            const fromPx = worldToPixel(from.x, from.y, floorSize, resolution);
+            const toPx = worldToPixel(to.x, to.y, floorSize, resolution);
+            const isSelected = selectedGraphEdgeId === edge.id;
+            return (
+              <svg
+                key={edge.id}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'none',
+                  zIndex: 20,
+                }}
+              >
+                <defs>
+                  <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L8,3 z" fill={isSelected ? '#52c41a' : '#666'} />
+                  </marker>
+                </defs>
+                <line
+                  x1={fromPx.x}
+                  y1={fromPx.y}
+                  x2={toPx.x}
+                  y2={toPx.y}
+                  stroke={isSelected ? '#52c41a' : '#666'}
+                  strokeWidth={isSelected ? 4 : 2}
+                  strokeDasharray={edge.bidirectional ? '0' : '8 5'}
+                  markerEnd={edge.bidirectional ? undefined : 'url(#arrowhead)'}
+                  opacity={0.85}
+                />
+              </svg>
+            );
+          })}
+
+          {graphNodes.map((node) => {
+            const isSelected = selectedGraphNodeId === node.id;
+            const pos = worldToPixel(node.x, node.y, floorSize, resolution);
+            const nodeColor =
+              node.type === 'robotStart'
+                ? '#52c41a'
+                : node.type === 'table'
+                  ? '#6c5ce7'
+                  : node.type === 'kitchen'
+                    ? '#e17055'
+                    : node.type === 'charging'
+                      ? '#00cec9'
+                      : '#1890ff';
+            return (
+              <div
+                key={node.id}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  if (selectedTool === 'edge') {
+                    if (!edgeDraftFromNodeId) {
+                      setEdgeDraftFromNodeId(node.id);
+                    } else if (edgeDraftFromNodeId !== node.id) {
+                      graphEdgeCounter++;
+                      const from = graphNodes.find((n) => n.id === edgeDraftFromNodeId);
+                      const weight = from ? Math.hypot(node.x - from.x, node.y - from.y) : 1;
+                      addGraphEdge({
+                        id: `edge-${graphEdgeCounter}`,
+                        from: edgeDraftFromNodeId,
+                        to: node.id,
+                        bidirectional: true,
+                        weight,
+                      });
+                    }
+                    return;
+                  }
+                  setSelectedGraphNode(node.id);
+                  setSelectedObject(null);
+                }}
+                onPointerDown={(ev) => {
+                  if (ev.button !== 0) return;
+                  ev.stopPropagation();
+                  const rect = containerRef.current?.getBoundingClientRect();
+                  if (!rect) return;
+                  const canvasX = (ev.clientX - rect.left - pan.x) / zoom;
+                  const canvasY = (ev.clientY - rect.top - pan.y) / zoom;
+                  const pointerWorld = pixelToWorld(canvasX, canvasY, floorSize, resolution);
+                  setDragState({
+                    id: node.id,
+                    offsetX: pointerWorld.x - node.x,
+                    offsetY: pointerWorld.y - node.y,
+                    startX: canvasX,
+                    startY: canvasY,
+                    startWidth: 0,
+                    startHeight: 0,
+                    handle: null,
+                    initialRotation: 0,
+                    startAngle: 0,
+                    startDeliveryOffsetX: 0,
+                    startDeliveryOffsetY: 0,
+                    nodeStartX: node.x,
+                    nodeStartY: node.y,
+                    kind: 'node',
+                  });
+                  setSelectedGraphNode(node.id);
+                  setSelectedObject(null);
+                  (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+                }}
+                onContextMenu={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                  removeGraphNode(node.id);
+                }}
+                style={{
+                  position: 'absolute',
+                  left: pos.x - 10,
+                  top: pos.y - 10,
+                  width: 20,
+                  height: 20,
+                  borderRadius: '50%',
+                  background: nodeColor,
+                  border: isSelected ? '3px solid white' : '2px solid rgba(255,255,255,0.85)',
+                  boxShadow: isSelected ? '0 0 0 4px rgba(24,144,255,0.25)' : '0 1px 4px rgba(0,0,0,0.3)',
+                  zIndex: 90,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'grab',
+                }}
+                title={`${node.name} (${node.type})`}
+              >
+                {node.type === 'robotStart' ? <Bot size={12} color="white" /> : <CircleDot size={12} color="white" />}
+              </div>
+            );
+          })}
+
           {objects.map((obj) => (
             <MapObjectShape
               key={obj.id}
@@ -936,6 +1245,11 @@ export function MapCanvas() {
                   overflow: 'visible',
                 }}
               >
+                <defs>
+                  <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L8,3 z" fill="#666" />
+                  </marker>
+                </defs>
                 <polyline
                   points={points}
                   fill="none"

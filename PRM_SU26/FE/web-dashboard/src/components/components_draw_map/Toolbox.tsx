@@ -5,10 +5,12 @@ import {
   CircleDot,
   DoorOpen,
   Hand,
+  Link2,
   MapPin,
   MousePointer2,
   Move,
   Navigation,
+  Plus,
   Square,
   Utensils,
 } from 'lucide-react';
@@ -34,6 +36,9 @@ const tools: ToolDefinition[] = [
   { tool: 'restricted', label: 'Restricted Area', Icon: CircleDot },
   { tool: 'door', label: 'Door', Icon: DoorOpen },
   { tool: 'robotStart', label: 'Start Position', Icon: Navigation },
+  { tool: 'waypoint', label: 'Waypoint', Icon: Plus },
+  { tool: 'node', label: 'Graph Node', Icon: CircleDot },
+  { tool: 'edge', label: 'Connect Edge', Icon: Link2 },
 ];
 
 export function Toolbox() {

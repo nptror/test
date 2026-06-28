@@ -1,6 +1,7 @@
 import { Button, Card, Empty, Form, Input, InputNumber, Select, Tabs, Typography } from 'antd';
 import type { TabsProps } from 'antd';
 import { Trash2 } from 'lucide-react';
+import type { GraphNode } from '@/types/graph';
 import type { MapObject, MapObjectType } from '@/types/map';
 import { useMapStore } from '@/store/mapStore';
 import { RobotConsole } from './RobotConsole';

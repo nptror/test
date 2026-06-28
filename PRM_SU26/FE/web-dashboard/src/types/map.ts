@@ -8,7 +8,8 @@ export type MapObjectType =
   | 'charging'
   | 'restricted'
   | 'door'
-  | 'robotStart';
+  | 'robotStart'
+  | 'waypoint';
 
 // ✅ Thêm export MapTool
 export type MapTool =
@@ -22,7 +23,19 @@ export type MapTool =
   | 'wall'
   | 'restricted'
   | 'door'
-  | 'robotStart';
+  | 'robotStart'
+  | 'waypoint'
+  | 'node'
+  | 'edge';
+
+export interface GraphEdge {
+  id: string;
+  from: string;
+  to: string;
+  bidirectional: boolean;
+  weight?: number;
+  label?: string;
+}
 
 export interface MapObject {
   id: string;
