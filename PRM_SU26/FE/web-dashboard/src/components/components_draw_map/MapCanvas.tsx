@@ -1,19 +1,19 @@
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Tag, Typography } from 'antd';
 import {
   Armchair,
   BatteryCharging,
   Bot,
   ChefHat,
-  CircleDot,
-  DoorOpen,
   MapPin,
   Move,
+  Package,
+  Route,
   ShieldAlert,
   Square,
+  Table2,
 } from 'lucide-react';
-import type { MapObject, MapObjectType, GraphEdge, MapTool } from '@/types/map';
-import type { GraphNode } from '@/types/graph';
+import type { MapObject, MapObjectType, MapTool } from '@/types/map';
 import { useMapStore } from '@/store/mapStore';
 import { Toolbox } from './Toolbox';
 import { getMapPixels, pixelToWorld, worldToPixel } from '@/utils/coordinateUtils';
@@ -30,13 +30,10 @@ const toolLabels: Record<MapTool, string> = {
   chair: 'Chair',
   wall: 'Wall',
   kitchen: 'Kitchen',
-  delivery: 'Delivery Point',
   charging: 'Charging Station',
   restricted: 'Restricted Area',
-  door: 'Door',
   robotStart: 'Start Position',
   waypoint: 'Waypoint',
-  node: 'Graph Node',
   edge: 'Connect Edge',
 };
 
@@ -52,8 +49,6 @@ function getObjectIcon(type: MapObjectType) {
       return <Bot size={18} />;
     case 'delivery':
       return <MapPin size={18} />;
-    case 'door':
-      return <DoorOpen size={18} />;
     case 'chair':
       return <Armchair size={18} />;
     case 'wall':
@@ -71,8 +66,8 @@ const objectPhysicalSizes: Record<MapObjectType, { width: number; height: number
   delivery: { width: 0.5, height: 0.5 }, // 0.5m x 0.5m
   charging: { width: 0.6, height: 0.4 }, // 0.6m x 0.4m
   restricted: { width: 3.0, height: 2.0 }, // 3m x 2m
-  door: { width: 1.0, height: 0.2 }, // 1m x 0.2m
   robotStart: { width: 0.5, height: 0.5 }, // 0.5m x 0.5m
+  waypoint: { width: 0.2, height: 0.2 },
 };
 
 interface MapObjectShapeProps {
@@ -393,8 +388,8 @@ function getObjectColor(type: MapObjectType): string {
     delivery: '#fdcb6e',
     charging: '#00cec9',
     restricted: '#d63031',
-    door: '#0984e3',
     robotStart: '#6c5ce7',
+    waypoint: '#1890ff',
   };
   return colors[type] || '#636e72';
 }
@@ -417,21 +412,6 @@ function canvasToWorldPoint(
   return pixelToWorld(px, py, floorSize, resolution);
 }
 
-function worldToCanvasPoint(
-  x: number,
-  y: number,
-  floorSize: number,
-  resolution: number,
-  panX: number,
-  panY: number,
-  zoom: number,
-) {
-  const px = worldToPixel(x, y, floorSize, resolution);
-  return {
-    x: px.x * zoom + panX,
-    y: px.y * zoom + panY,
-  };
-}
 
 export function MapCanvas() {
   const objects = useMapStore((s) => s.objects);
@@ -457,10 +437,11 @@ export function MapCanvas() {
   const updateGraphNode = useMapStore((s) => s.updateGraphNode);
   const addGraphEdge = useMapStore((s) => s.addGraphEdge);
   const removeGraphNode = useMapStore((s) => s.removeGraphNode);
-  const removeGraphEdge = useMapStore((s) => s.removeGraphEdge);
 
   const [robotState, setRobotState] = useState<{ x: number; y: number; theta: number; status: string } | null>(null);
   const [robotPath, setRobotPath] = useState<{ x: number; y: number }[]>([]);
+  const [mouseCanvasPos, setMouseCanvasPos] = useState<{ x: number; y: number } | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   // Poll robot position + path
   useEffect(() => {
@@ -633,11 +614,18 @@ export function MapCanvas() {
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const canvasX = (e.clientX - rect.left - pan.x) / zoom;
+      const canvasY = (e.clientY - rect.top - pan.y) / zoom;
+
+      if (selectedTool === 'edge' && edgeDraftFromNodeId) {
+        setMouseCanvasPos({ x: canvasX, y: canvasY });
+      } else if (mouseCanvasPos !== null) {
+        setMouseCanvasPos(null);
+      }
+
       if (dragState.id) {
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (!rect) return;
-        const canvasX = (e.clientX - rect.left - pan.x) / zoom;
-        const canvasY = (e.clientY - rect.top - pan.y) / zoom;
         const obj = objects.find(o => o.id === dragState.id);
         const node = graphNodes.find((n) => n.id === dragState.id);
         if (!obj && !node) return;
@@ -790,6 +778,12 @@ export function MapCanvas() {
       if (e.code === 'Space' && !e.repeat) {
         spaceHeld.current = true;
       }
+      if (e.code === 'Escape') {
+        setEdgeDraftFromNodeId(null);
+        setSelectedObject(null);
+        setSelectedGraphNode(null);
+        setSelectedGraphEdge(null);
+      }
       if (e.code === 'Delete' || e.code === 'Backspace') {
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
@@ -806,7 +800,7 @@ export function MapCanvas() {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
     };
-  }, [removeObject]);
+  }, [removeObject, setEdgeDraftFromNodeId, setSelectedObject, setSelectedGraphNode, setSelectedGraphEdge]);
 
   useEffect(() => {
     graphNodeCounter = Math.max(graphNodeCounter, graphNodes.length + 1);
@@ -862,7 +856,7 @@ export function MapCanvas() {
         return;
       }
 
-      if (selectedTool === 'waypoint' || selectedTool === 'node') {
+      if (selectedTool === 'waypoint') {
         graphNodeCounter++;
         const nodeType = 'waypoint';
         const nodeId = `${nodeType}-${graphNodeCounter}`;
@@ -879,18 +873,29 @@ export function MapCanvas() {
       }
 
       if (selectedTool === 'robotStart') {
-        const existingRobotStart = graphNodes.find((node) => node.type === 'robotStart');
-        if (existingRobotStart) {
-          updateGraphNode(existingRobotStart.id, { x: worldPoint.x, y: worldPoint.y });
+        const robotSizePx = Math.max(8, Math.round(0.5 / resolution));
+        const robotPx = worldToPixel(worldPoint.x, worldPoint.y, floorSize, resolution);
+        const robotX = Math.max(0, Math.min(getMapPixels(floorSize, resolution) - robotSizePx, Math.round(robotPx.x - robotSizePx / 2)));
+        const robotY = Math.max(0, Math.min(getMapPixels(floorSize, resolution) - robotSizePx, Math.round(robotPx.y - robotSizePx / 2)));
+
+        const existingRobotStartObject = objects.find((object) => object.type === 'robotStart');
+        if (existingRobotStartObject) {
+          updateObject(existingRobotStartObject.id, {
+            x: robotX,
+            y: robotY,
+            width: robotSizePx,
+            height: robotSizePx,
+            rotation: 0,
+          });
         } else {
           addObject({
             id: `robotStart-${objectCounter + 1}`,
             type: 'robotStart',
             name: 'Robot Start',
-            x: Math.round(worldPoint.x - 5),
-            y: Math.round(worldPoint.y - 5),
-            width: Math.round(0.5 / resolution),
-            height: Math.round(0.5 / resolution),
+            x: robotX,
+            y: robotY,
+            width: robotSizePx,
+            height: robotSizePx,
             rotation: 0,
           });
         }
@@ -902,7 +907,10 @@ export function MapCanvas() {
           const p = worldToPixel(node.x, node.y, floorSize, resolution);
           return Math.hypot(p.x - canvasX, p.y - canvasY) <= 16;
         });
-        if (!nodeUnderCursor) return;
+        if (!nodeUnderCursor) {
+          setEdgeDraftFromNodeId(null);
+          return;
+        }
 
         if (!edgeDraftFromNodeId) {
           setEdgeDraftFromNodeId(nodeUnderCursor.id);
@@ -935,6 +943,7 @@ export function MapCanvas() {
       edgeDraftFromNodeId,
       floorSize,
       graphNodes,
+      objects,
       pan.x,
       pan.y,
       resolution,
@@ -945,6 +954,7 @@ export function MapCanvas() {
       setSelectedObject,
       updateGraphNode,
       addObject,
+      updateObject,
       zoom,
     ],
   );
@@ -1115,6 +1125,42 @@ export function MapCanvas() {
             );
           })}
 
+          {/* Active edge draft line following mouse */}
+          {selectedTool === 'edge' && edgeDraftFromNodeId && mouseCanvasPos && (() => {
+            const fromNode = graphNodes.find(n => n.id === edgeDraftFromNodeId);
+            if (!fromNode) return null;
+            const fromPx = worldToPixel(fromNode.x, fromNode.y, floorSize, resolution);
+            return (
+              <svg
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'none',
+                  zIndex: 25,
+                }}
+              >
+                <line
+                  x1={fromPx.x}
+                  y1={fromPx.y}
+                  x2={mouseCanvasPos.x}
+                  y2={mouseCanvasPos.y}
+                  stroke="#ff9f43"
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  opacity={0.85}
+                />
+                <circle
+                  cx={mouseCanvasPos.x}
+                  cy={mouseCanvasPos.y}
+                  r={4}
+                  fill="#ff9f43"
+                />
+              </svg>
+            );
+          })()}
+
           {graphNodes.map((node) => {
             const isSelected = selectedGraphNodeId === node.id;
             const pos = worldToPixel(node.x, node.y, floorSize, resolution);
@@ -1123,14 +1169,32 @@ export function MapCanvas() {
                 ? '#52c41a'
                 : node.type === 'table'
                   ? '#6c5ce7'
-                  : node.type === 'kitchen'
-                    ? '#e17055'
-                    : node.type === 'charging'
-                      ? '#00cec9'
-                      : '#1890ff';
+                  : node.type === 'delivery'
+                    ? '#ff4d4f'
+                    : node.type === 'kitchen'
+                      ? '#e17055'
+                      : node.type === 'charging'
+                        ? '#00cec9'
+                        : '#1890ff';
+
+            const nodeIcon =
+              node.type === 'robotStart'
+                ? <Bot size={12} color="white" />
+                : node.type === 'table'
+                  ? <Table2 size={12} color="white" />
+                  : node.type === 'delivery'
+                    ? <Package size={12} color="white" />
+                    : node.type === 'kitchen'
+                      ? <ChefHat size={12} color="white" />
+                      : node.type === 'charging'
+                        ? <BatteryCharging size={12} color="white" />
+                        : <Route size={12} color="white" />;
+
             return (
               <div
                 key={node.id}
+                onMouseEnter={() => setHoveredNodeId(node.id)}
+                onMouseLeave={() => setHoveredNodeId(null)}
                 onClick={(ev) => {
                   ev.stopPropagation();
                   if (selectedTool === 'edge') {
@@ -1155,6 +1219,7 @@ export function MapCanvas() {
                 }}
                 onPointerDown={(ev) => {
                   if (ev.button !== 0) return;
+                  if (node.type !== 'waypoint') return; // Sync nodes cannot be dragged manually
                   ev.stopPropagation();
                   const rect = containerRef.current?.getBoundingClientRect();
                   if (!rect) return;
@@ -1196,16 +1261,50 @@ export function MapCanvas() {
                   borderRadius: '50%',
                   background: nodeColor,
                   border: isSelected ? '3px solid white' : '2px solid rgba(255,255,255,0.85)',
-                  boxShadow: isSelected ? '0 0 0 4px rgba(24,144,255,0.25)' : '0 1px 4px rgba(0,0,0,0.3)',
+                  boxShadow: isSelected
+                    ? `0 0 0 4px ${nodeColor}44, 0 4px 12px rgba(0,0,0,0.25)`
+                    : hoveredNodeId === node.id
+                      ? `0 0 0 3px ${nodeColor}22, 0 2px 8px rgba(0,0,0,0.2)`
+                      : '0 1px 4px rgba(0,0,0,0.15)',
                   zIndex: 90,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  cursor: 'grab',
+                  cursor: node.type === 'waypoint' ? 'grab' : 'pointer',
+                  transform: hoveredNodeId === node.id || isSelected ? 'scale(1.15)' : 'scale(1)',
+                  transition: 'transform 0.15s ease-out, box-shadow 0.15s ease-out',
                 }}
                 title={`${node.name} (${node.type})`}
               >
-                {node.type === 'robotStart' ? <Bot size={12} color="white" /> : <CircleDot size={12} color="white" />}
+                {nodeIcon}
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '22px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    color: '#1f1f1f',
+                    whiteSpace: 'nowrap',
+                    background: 'rgba(255,255,255,0.9)',
+                    padding: '0 4px',
+                    borderRadius: '4px',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {node.type === 'robotStart'
+                    ? 'Start'
+                    : node.type === 'table'
+                      ? node.name
+                      : node.type === 'delivery'
+                        ? 'Delivery'
+                        : node.type === 'kitchen'
+                          ? 'Kitchen'
+                          : node.type === 'charging'
+                            ? 'Charging'
+                            : 'Waypoint'}
+                </span>
               </div>
             );
           })}

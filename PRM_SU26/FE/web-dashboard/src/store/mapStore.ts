@@ -1,8 +1,8 @@
-// src/store/mapStore.ts
 import { create } from 'zustand';
 import type { GraphEdge, MapObject, MapTool } from '@/types/map';
 import type { GraphNode } from '@/types/graph';
 import { migrateLegacyMapToGraph } from '@/utils/migrateLegacyGraph';
+import { pixelToWorld } from '@/utils/coordinateUtils';
 
 const STORAGE_KEY = 'restaurant_map_objects';
 const GRAPH_STORAGE_KEY = 'restaurant_graph_map';
@@ -30,6 +30,8 @@ interface MapState {
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
   zoom: number;
+  floorSize: number;
+  resolution: number;
   setSelectedTool: (tool: MapTool) => void;
   setSelectedObject: (id: string | null) => void;
   setSelectedGraphNode: (id: string | null) => void;
@@ -117,24 +119,104 @@ const enforceSingleRobotStartNodes = (nodes: GraphNode[]): GraphNode[] => {
   });
 };
 
-const createRobotStartNodeFromObject = (object: MapObject): GraphNode => ({
-  id: `robotStart-${object.id}`,
-  type: 'robotStart',
-  name: object.name || 'Robot Start',
-  x: object.x + object.width / 2,
-  y: object.y + object.height / 2,
-  theta: 0,
-});
+const createRobotStartNodeFromObject = (object: MapObject, floorSize = 20, resolution = 0.05): GraphNode => {
+  const cx = object.x + object.width / 2;
+  const cy = object.y + object.height / 2;
+  const worldPos = pixelToWorld(cx, cy, floorSize, resolution);
+  return {
+    id: `robotStart-${object.id}`,
+    type: 'robotStart',
+    name: object.name || 'Robot Start',
+    x: worldPos.x,
+    y: worldPos.y,
+    theta: 0,
+  };
+};
 
-const syncRobotStartNode = (objects: MapObject[], nodes: GraphNode[]): GraphNode[] => {
+const syncRobotStartNode = (objects: MapObject[], nodes: GraphNode[], floorSize = 20, resolution = 0.05): GraphNode[] => {
   const robotStartObject = objects.find((object) => object.type === 'robotStart');
   if (!robotStartObject) {
     return nodes.filter((node) => node.type !== 'robotStart');
   }
 
-  const robotStartNode = createRobotStartNodeFromObject(robotStartObject);
+  const robotStartNode = createRobotStartNodeFromObject(robotStartObject, floorSize, resolution);
   const otherNodes = nodes.filter((node) => node.type !== 'robotStart');
   return enforceSingleRobotStartNodes([robotStartNode, ...otherNodes]);
+};
+
+const syncGraphStateWithObjects = (objects: MapObject[], nodes: GraphNode[], floorSize = 20, resolution = 0.05) =>
+  syncRobotStartNode(objects, nodes, floorSize, resolution);
+
+const alignGraphStateWithObjects = (objects: MapObject[], nodes: GraphNode[], floorSize = 20, resolution = 0.05) => {
+  const robotSynced = syncGraphStateWithObjects(objects, nodes, floorSize, resolution);
+  const deliveryNodes = objects
+    .filter((object) => object.type === 'table')
+    .map((object) => {
+      let cx = object.x + object.width / 2;
+      let cy = object.y + object.height / 2;
+      const angleRad = ((object.rotation || 0) * Math.PI) / 180;
+      const offX = object.deliveryOffsetX || 0;
+      const offY = object.deliveryOffsetY || 0;
+      const rotatedOffX = offX * Math.cos(angleRad) - offY * Math.sin(angleRad);
+      const rotatedOffY = offX * Math.sin(angleRad) + offY * Math.cos(angleRad);
+      cx += rotatedOffX;
+      cy += rotatedOffY;
+      const worldPos = pixelToWorld(cx, cy, floorSize, resolution);
+
+      return {
+        id: `delivery-${object.id}`,
+        type: 'delivery' as const,
+        name: `${object.name || `Table ${object.id}`}_Delivery`,
+        x: worldPos.x,
+        y: worldPos.y,
+        theta: 0,
+        tableNumber: object.tableNumber,
+        deliveryOffsetX: object.deliveryOffsetX,
+        deliveryOffsetY: object.deliveryOffsetY,
+      };
+    });
+
+  const kitchenNodes = objects
+    .filter((object) => object.type === 'kitchen')
+    .map((object) => {
+      const cx = object.x + object.width / 2;
+      const cy = object.y + object.height / 2;
+      const worldPos = pixelToWorld(cx, cy, floorSize, resolution);
+      return {
+        id: `kitchen-${object.id}`,
+        type: 'kitchen' as const,
+        name: object.name || `Kitchen_${object.id}`,
+        x: worldPos.x,
+        y: worldPos.y,
+        theta: 0,
+      };
+    });
+
+  const chargingNodes = objects
+    .filter((object) => object.type === 'charging')
+    .map((object) => {
+      const cx = object.x + object.width / 2;
+      const cy = object.y + object.height / 2;
+      const worldPos = pixelToWorld(cx, cy, floorSize, resolution);
+      return {
+        id: `charging-${object.id}`,
+        type: 'charging' as const,
+        name: object.name || `Charging_${object.id}`,
+        x: worldPos.x,
+        y: worldPos.y,
+        theta: 0,
+      };
+    });
+
+  const preserved = robotSynced.filter(
+    (node) =>
+      node.type !== 'delivery' &&
+      node.type !== 'table' &&
+      node.type !== 'kitchen' &&
+      node.type !== 'charging'
+  );
+  const merged = [...preserved, ...deliveryNodes, ...kitchenNodes, ...chargingNodes];
+  return enforceSingleRobotStartNodes(merged);
 };
 
 const storedObjects = loadObjectsFromStorage();
@@ -148,12 +230,14 @@ const initialGraphMigration = migrateLegacyMapToGraph(
   storedGraph.nodes,
   storedGraph.edges,
   initialLegacyRouteText,
+  20,
+  0.05
 );
 const initialGraph = {
-  nodes: initialGraphMigration.nodes,
+  nodes: alignGraphStateWithObjects(initialObjects, initialGraphMigration.nodes, 20, 0.05),
   edges: initialGraphMigration.edges,
 };
-if (initialGraphMigration.migrated) {
+if (initialGraphMigration.migrated || initialGraph.nodes.length !== initialGraphMigration.nodes.length) {
   saveGraphToStorage(initialGraph.nodes, initialGraph.edges);
 }
 
@@ -167,6 +251,8 @@ export const useMapStore = create<MapState>((set, get) => ({
   graphNodes: enforceSingleRobotStartNodes(initialGraph.nodes),
   graphEdges: initialGraph.edges,
   zoom: 1,
+  floorSize: 20,
+  resolution: 0.05,
 
   setSelectedTool: (tool) =>
     set((state) => ({
@@ -188,12 +274,8 @@ export const useMapStore = create<MapState>((set, get) => ({
       const newObjects = enforceSingleRobotStartObjects(nextObjects);
       saveObjectsToStorage(newObjects);
 
-      const nextGraphNodes = object.type === 'robotStart'
-        ? syncRobotStartNode(newObjects, state.graphNodes)
-        : state.graphNodes;
-      if (object.type === 'robotStart') {
-        saveGraphToStorage(nextGraphNodes, state.graphEdges);
-      }
+      const nextGraphNodes = alignGraphStateWithObjects(newObjects, state.graphNodes, state.floorSize, state.resolution);
+      saveGraphToStorage(nextGraphNodes, state.graphEdges);
 
       return {
         objects: newObjects,
@@ -208,10 +290,8 @@ export const useMapStore = create<MapState>((set, get) => ({
       const newObjects = enforceSingleRobotStartObjects(nextObjects);
       saveObjectsToStorage(newObjects);
 
-      const nextGraphNodes = syncRobotStartNode(newObjects, state.graphNodes);
-      if (newObjects.some((object) => object.type === 'robotStart')) {
-        saveGraphToStorage(nextGraphNodes, state.graphEdges);
-      }
+      const nextGraphNodes = alignGraphStateWithObjects(newObjects, state.graphNodes, state.floorSize, state.resolution);
+      saveGraphToStorage(nextGraphNodes, state.graphEdges);
 
       return { objects: newObjects, graphNodes: nextGraphNodes };
     }),
@@ -221,14 +301,18 @@ export const useMapStore = create<MapState>((set, get) => ({
       const newObjects = state.objects.filter((obj) => obj.id !== id);
       saveObjectsToStorage(newObjects);
 
-      const nextGraphNodes = newObjects.some((object) => object.type === 'robotStart')
-        ? syncRobotStartNode(newObjects, state.graphNodes)
-        : state.graphNodes.filter((node) => node.type !== 'robotStart');
-      saveGraphToStorage(nextGraphNodes, state.graphEdges);
+      const nextGraphNodes = alignGraphStateWithObjects(newObjects, state.graphNodes, state.floorSize, state.resolution);
+      const deletedNodeIds = [id, `delivery-${id}`, `kitchen-${id}`, `charging-${id}`];
+      const nextGraphEdges = state.graphEdges.filter(
+        (edge) => !deletedNodeIds.includes(edge.from) && !deletedNodeIds.includes(edge.to)
+      );
+
+      saveGraphToStorage(nextGraphNodes, nextGraphEdges);
 
       return {
         objects: newObjects,
         graphNodes: nextGraphNodes,
+        graphEdges: nextGraphEdges,
         selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
       };
     }),
@@ -300,7 +384,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     }
 
     const resetObjects: MapObject[] = [];
-    const resetMigration = migrateLegacyMapToGraph(resetObjects, [], [], '');
+    const resetMigration = migrateLegacyMapToGraph(resetObjects, [], [], '', 20, 0.05);
     const resetNodes = enforceSingleRobotStartNodes(resetMigration.nodes);
     const resetEdges = resetMigration.edges;
 
@@ -328,8 +412,9 @@ export const useMapStore = create<MapState>((set, get) => ({
 
     const graph = loadGraphFromStorage();
     const legacyRouteText = loadLegacyRouteText();
-    const migration = migrateLegacyMapToGraph(nextObjects, graph.nodes, graph.edges, legacyRouteText);
-    const nextNodes = enforceSingleRobotStartNodes(migration.nodes);
+    const migration = migrateLegacyMapToGraph(nextObjects, graph.nodes, graph.edges, legacyRouteText, get().floorSize, get().resolution);
+    const alignedNodes = alignGraphStateWithObjects(nextObjects, migration.nodes, get().floorSize, get().resolution);
+    const nextNodes = enforceSingleRobotStartNodes(alignedNodes);
     const nextEdges = migration.edges;
 
     if (migration.migrated) {
@@ -344,8 +429,9 @@ export const useMapStore = create<MapState>((set, get) => ({
 
   saveToStorage: () => {
     const objects = enforceSingleRobotStartObjects(get().objects);
-    const migration = migrateLegacyMapToGraph(objects, get().graphNodes, get().graphEdges, loadLegacyRouteText());
-    const graphNodes = enforceSingleRobotStartNodes(migration.nodes);
+    const migration = migrateLegacyMapToGraph(objects, get().graphNodes, get().graphEdges, loadLegacyRouteText(), get().floorSize, get().resolution);
+    const alignedNodes = alignGraphStateWithObjects(objects, migration.nodes, get().floorSize, get().resolution);
+    const graphNodes = enforceSingleRobotStartNodes(alignedNodes);
     const graphEdges = migration.edges;
     saveObjectsToStorage(objects);
     saveGraphToStorage(graphNodes, graphEdges);

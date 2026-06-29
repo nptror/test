@@ -1,6 +1,7 @@
 export type GraphNodeType =
   | 'robotStart'
   | 'table'
+  | 'delivery'
   | 'kitchen'
   | 'charging'
   | 'waypoint';

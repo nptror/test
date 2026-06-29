@@ -9,8 +9,6 @@ export interface LegacyGraphMigrationResult {
   notes: string[];
 }
 
-type Point = { x: number; y: number };
-
 const CANONICAL_NODE_TYPES = new Set<GraphNodeType>(['robotStart', 'table', 'kitchen', 'charging']);
 
 function normalizeText(value: string): string {
@@ -25,31 +23,33 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-function getObjectCenter(obj: MapObject): Point {
-  return {
-    x: obj.x + obj.width / 2,
-    y: obj.y + obj.height / 2,
-  };
-}
-
-function buildNodeId(type: GraphNodeType, sourceId: string, fallbackName: string): string {
-  const suffix = slugify(sourceId || fallbackName) || slugify(fallbackName) || 'node';
-  return `${type}-${suffix}`;
-}
-
-function createGraphNodeFromObject(obj: MapObject): GraphNode | null {
+function createGraphNodeFromObject(obj: MapObject, floorSize = 20, resolution = 0.05): GraphNode | null {
   if (!CANONICAL_NODE_TYPES.has(obj.type as GraphNodeType)) return null;
 
   const fallbackName = obj.name || obj.type;
-  const centerX = obj.x + obj.width / 2;
-  const centerY = obj.y + obj.height / 2;
+  let cx = obj.x + obj.width / 2;
+  let cy = obj.y + obj.height / 2;
+  const graphType = (obj.type === 'table' ? 'delivery' : obj.type) as GraphNodeType;
+  const nameBase = (obj.name || obj.type).replace(/\s+/g, '_');
+
+  if (obj.type === 'table') {
+    const angleRad = ((obj.rotation || 0) * Math.PI) / 180;
+    const offX = obj.deliveryOffsetX || 0;
+    const offY = obj.deliveryOffsetY || 0;
+    const rotatedOffX = offX * Math.cos(angleRad) - offY * Math.sin(angleRad);
+    const rotatedOffY = offX * Math.sin(angleRad) + offY * Math.cos(angleRad);
+    cx += rotatedOffX;
+    cy += rotatedOffY;
+  }
+
+  const worldPos = pixelToWorld(cx, cy, floorSize, resolution);
 
   return {
-    id: buildNodeId(obj.type as GraphNodeType, obj.id, fallbackName),
-    type: obj.type as GraphNodeType,
-    name: obj.name || `${obj.type.charAt(0).toUpperCase()}${obj.type.slice(1)}`,
-    x: centerX,
-    y: centerY,
+    id: obj.type === 'table' ? `delivery-${obj.id}` : obj.id,
+    type: graphType,
+    name: graphType === 'delivery' ? `${nameBase}_Delivery` : fallbackName,
+    x: worldPos.x,
+    y: worldPos.y,
     theta: 0,
     tableNumber: obj.tableNumber,
     deliveryOffsetX: obj.deliveryOffsetX,
@@ -80,7 +80,7 @@ function parseLegacyWaypointLine(line: string): GraphNode | null {
   } else if (lowered.includes('charging')) {
     type = 'charging';
   } else if (lowered.includes('table')) {
-    type = 'table';
+    type = 'delivery';
   }
 
   return {
@@ -187,13 +187,13 @@ function mergeEdges(existing: GraphEdge[], additions: GraphEdge[]): GraphEdge[] 
 
 function sortTablesAndAnchors(nodes: GraphNode[]): GraphNode[] {
   const robotStart = nodes.filter((node) => node.type === 'robotStart');
-  const tables = nodes
-    .filter((node) => node.type === 'table')
+  const deliveries = nodes
+    .filter((node) => node.type === 'delivery')
     .sort((a, b) => (a.tableNumber ?? 0) - (b.tableNumber ?? 0) || a.name.localeCompare(b.name));
   const anchors = nodes.filter((node) => node.type === 'kitchen' || node.type === 'charging');
   const waypoints = nodes.filter((node) => node.type === 'waypoint');
 
-  return [...robotStart.slice(0, 1), ...anchors, ...tables, ...waypoints];
+  return [...robotStart.slice(0, 1), ...anchors, ...deliveries, ...waypoints];
 }
 
 export function migrateLegacyMapToGraph(
@@ -201,10 +201,12 @@ export function migrateLegacyMapToGraph(
   graphNodes: GraphNode[],
   graphEdges: GraphEdge[],
   legacyRouteText = '',
+  floorSize = 20,
+  resolution = 0.05,
 ): LegacyGraphMigrationResult {
   const notes: string[] = [];
   const canonicalNodes = objects
-    .map(createGraphNodeFromObject)
+    .map((obj) => createGraphNodeFromObject(obj, floorSize, resolution))
     .filter((node): node is GraphNode => Boolean(node));
 
   const normalizedExisting = dedupeNodes(graphNodes);

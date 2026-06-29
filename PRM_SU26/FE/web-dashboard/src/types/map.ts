@@ -7,7 +7,6 @@ export type MapObjectType =
   | 'delivery'
   | 'charging'
   | 'restricted'
-  | 'door'
   | 'robotStart'
   | 'waypoint';
 
@@ -17,15 +16,12 @@ export type MapTool =
   | 'pan'
   | 'table'
   | 'chair'
-  | 'delivery'
   | 'kitchen'
   | 'charging'
   | 'wall'
   | 'restricted'
-  | 'door'
   | 'robotStart'
   | 'waypoint'
-  | 'node'
   | 'edge';
 
 export interface GraphEdge {

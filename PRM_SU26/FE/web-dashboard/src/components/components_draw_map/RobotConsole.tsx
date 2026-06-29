@@ -1,6 +1,5 @@
-// src/components/components_draw_map/RobotConsole.tsx
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, Card, Col, Divider, Row, Select, Space, Statistic, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Col, Row, Select, Space, Statistic, Tag, Typography } from 'antd';
 import {
   ArrowDown,
   ArrowLeft,
@@ -9,8 +8,6 @@ import {
   Circle,
   Home,
   Navigation,
-  Play,
-  RotateCcw,
 } from 'lucide-react';
 import { useMapStore } from '../../store/mapStore';
 
@@ -26,7 +23,6 @@ interface Telemetry {
 export const RobotConsole: React.FC = () => {
   const objects = useMapStore((state) => state.objects);
   const tables = objects.filter((obj) => obj.type === 'table');
-  const startObj = objects.find((obj) => obj.type === 'robotStart');
 
   const [selectedTable, setSelectedTable] = useState<string | undefined>(undefined);
   const [telemetry, setTelemetry] = useState<Telemetry>({

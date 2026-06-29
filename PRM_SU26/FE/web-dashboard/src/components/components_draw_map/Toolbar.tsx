@@ -60,10 +60,12 @@ export const Toolbar = () => {
       window.alert('Chưa đặt vị trí xuất phát (robotStart)');
       return;
     }
-    const startWorld = {
-      x: startObj.x + startObj.width / 2,
-      y: startObj.y + startObj.height / 2,
-    };
+    const startWorld = pixelToWorld(
+      startObj.x + startObj.width / 2,
+      startObj.y + startObj.height / 2,
+      floorSize,
+      resolution
+    );
     let allValid = true;
     for (const table of tables) {
       let cx = table.x + table.width / 2;
@@ -76,7 +78,7 @@ export const Toolbar = () => {
       cx += offX * Math.cos(angleRad) - offY * Math.sin(angleRad);
       cy += offX * Math.sin(angleRad) + offY * Math.cos(angleRad);
 
-      const goalWorld = { x: cx, y: cy };
+      const goalWorld = pixelToWorld(cx, cy, floorSize, resolution);
 
       const result = validateRoute(startWorld, goalWorld, objects, floorSize, resolution);
       if (!result.valid) {

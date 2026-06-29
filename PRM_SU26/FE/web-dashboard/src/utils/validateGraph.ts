@@ -26,10 +26,6 @@ export interface GraphValidationResult {
   tableCount: number;
 }
 
-function pointKey(p: Point): string {
-  return `${p.x},${p.y}`;
-}
-
 function isObstacleCell(grid: Uint8Array, mapSize: number, x: number, y: number): boolean {
   if (x < 0 || x >= mapSize || y < 0 || y >= mapSize) return true;
   return grid[y * mapSize + x] === 0;
@@ -72,27 +68,6 @@ function validateRobotStartUniqueness(robotStarts: GraphNode[], issues: GraphVal
   }
 }
 
-function validateReachability(
-  robotStarts: GraphNode[],
-  tables: GraphNode[],
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-  issues: GraphValidationIssue[],
-) {
-  if (robotStarts.length !== 1) return;
-  const adjacency = buildAdjacency(nodes, edges);
-  const start = robotStarts[0];
-  for (const table of tables) {
-    if (!hasPath(start.id, table.id, adjacency)) {
-      issues.push({
-        type: 'table_unreachable',
-        nodeId: table.id,
-        message: `No graph path from robotStart to table "${table.name}".`,
-      });
-    }
-  }
-}
-
 function buildAdjacency(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Set<string>> {
   const adjacency = new Map<string, Set<string>>();
   for (const node of nodes) {
@@ -129,6 +104,72 @@ function hasPath(startId: string, goalId: string, adjacency: Map<string, Set<str
   return false;
 }
 
+function validateReachability(
+  robotStarts: GraphNode[],
+  tables: GraphNode[],
+  deliveries: GraphNode[],
+  waypoints: GraphNode[],
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  issues: GraphValidationIssue[],
+) {
+  if (robotStarts.length !== 1) return;
+  const adjacency = buildAdjacency(nodes, edges);
+  const start = robotStarts[0];
+
+  for (const table of tables) {
+    if (!hasPath(start.id, table.id, adjacency)) {
+      issues.push({
+        type: 'table_unreachable',
+        nodeId: table.id,
+        message: `No graph path from robotStart to table "${table.name}".`,
+      });
+    }
+  }
+
+  for (const delivery of deliveries) {
+    if (!hasPath(start.id, delivery.id, adjacency)) {
+      issues.push({
+        type: 'table_unreachable',
+        nodeId: delivery.id,
+        message: `No graph path from robotStart to delivery node "${delivery.name}".`,
+      });
+    }
+  }
+
+  for (const waypoint of waypoints) {
+    if (!hasPath(start.id, waypoint.id, adjacency)) {
+      issues.push({
+        type: 'table_unreachable',
+        nodeId: waypoint.id,
+        message: `No graph path from robotStart to waypoint "${waypoint.name}".`,
+      });
+    }
+  }
+
+  const kitchens = nodes.filter((n) => n.type === 'kitchen');
+  for (const kitchen of kitchens) {
+    if (!hasPath(start.id, kitchen.id, adjacency)) {
+      issues.push({
+        type: 'table_unreachable',
+        nodeId: kitchen.id,
+        message: `No graph path from robotStart to kitchen "${kitchen.name}".`,
+      });
+    }
+  }
+
+  const chargings = nodes.filter((n) => n.type === 'charging');
+  for (const charging of chargings) {
+    if (!hasPath(start.id, charging.id, adjacency)) {
+      issues.push({
+        type: 'table_unreachable',
+        nodeId: charging.id,
+        message: `No graph path from robotStart to charging station "${charging.name}".`,
+      });
+    }
+  }
+}
+
 export function validateGraph(
   objects: MapObject[],
   nodes: GraphNode[],
@@ -142,6 +183,8 @@ export function validateGraph(
 
   const robotStarts = nodes.filter((node) => node.type === 'robotStart');
   const tables = nodes.filter((node) => node.type === 'table');
+  const deliveries = nodes.filter((node) => node.type === 'delivery');
+  const waypoints = nodes.filter((node) => node.type === 'waypoint');
   const nodePixelCache = new Map<string, Point>();
 
   for (const node of nodes) {
@@ -178,13 +221,13 @@ export function validateGraph(
     }
   }
 
-  validateReachability(robotStarts, tables, nodes, edges, issues);
+  validateReachability(robotStarts, tables, deliveries, waypoints, nodes, edges, issues);
 
   return {
     valid: issues.length === 0,
     issues,
     robotStartCount: robotStarts.length,
-    tableCount: tables.length,
+    tableCount: tables.length + deliveries.length,
   };
 }
 

@@ -9,13 +9,20 @@ export interface ExportedGraphData {
 }
 
 export function exportGraph(nodes: GraphNode[], edges: GraphEdge[], floorSize: number, resolution: number): string {
+  const normalizedNodes = nodes.map((node) => ({
+    ...node,
+    name: node.type === 'delivery' && !node.name.toLowerCase().includes('delivery')
+      ? `${node.name}_Delivery`
+      : node.name,
+  }));
+
   const payload: ExportedGraphData = {
     meta: {
-      version: 1,
+      version: 2,
       floorSize,
       resolution,
     },
-    nodes,
+    nodes: normalizedNodes,
     edges,
   };
 
