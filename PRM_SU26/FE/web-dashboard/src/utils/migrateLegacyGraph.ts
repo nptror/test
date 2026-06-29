@@ -9,7 +9,7 @@ export interface LegacyGraphMigrationResult {
   notes: string[];
 }
 
-const CANONICAL_NODE_TYPES = new Set<GraphNodeType>(['robotStart', 'table', 'kitchen', 'charging']);
+const CANONICAL_NODE_TYPES = new Set<GraphNodeType>(['robotStart', 'table']);
 
 function normalizeText(value: string): string {
   return value.trim().toLowerCase().replace(/[_\s-]+/g, ' ');
@@ -190,10 +190,9 @@ function sortTablesAndAnchors(nodes: GraphNode[]): GraphNode[] {
   const deliveries = nodes
     .filter((node) => node.type === 'delivery')
     .sort((a, b) => (a.tableNumber ?? 0) - (b.tableNumber ?? 0) || a.name.localeCompare(b.name));
-  const anchors = nodes.filter((node) => node.type === 'kitchen' || node.type === 'charging');
   const waypoints = nodes.filter((node) => node.type === 'waypoint');
 
-  return [...robotStart.slice(0, 1), ...anchors, ...deliveries, ...waypoints];
+  return [...robotStart.slice(0, 1), ...deliveries, ...waypoints];
 }
 
 export function migrateLegacyMapToGraph(

@@ -14,7 +14,7 @@ export function buildOccupancyGrid(objects: MapObject[], floorSize: number, reso
   const grid = new Uint8Array(mapSize * mapSize).fill(FREE);
 
   objects.forEach(obj => {
-    if (obj.type === 'wall' || obj.type === 'table' || obj.type === 'kitchen' || obj.type === 'restricted' || obj.type === 'chair') {
+    if (obj.type === 'wall' || obj.type === 'table') {
       const rotation = obj.rotation || 0;
       if (rotation === 0) {
         const x1 = Math.max(0, Math.floor(obj.x));

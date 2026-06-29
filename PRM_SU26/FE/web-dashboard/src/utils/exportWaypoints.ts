@@ -1,41 +1,27 @@
 // src/utils/exportWaypoints.ts
-import { MapObject } from '../types/map';
-import { pixelToWorld } from './coordinateUtils';
+import { GraphNode } from '../types/graph';
 
 /**
- * Xuất danh sách waypoint dạng text.
- * CHỈ xuất các điểm chức năng (robotStart, kitchen, charging, delivery).
- * Bàn ăn (table), tường (wall) và ghế (chair) không được xuất hiện trong file này.
+ * Export waypoints as plain text.
+ * Only functional points are exported: robotStart, kitchen, charging, delivery.
+ * Table, wall, chair are not exported.
  */
-export function exportWaypoints(objects: MapObject[], floorSize: number, resolution: number): string {
+export function exportWaypoints(nodes: GraphNode[], floorSize: number, resolution: number): string {
   const lines: string[] = [];
   let robotStartExported = false;
 
-  objects.forEach((obj) => {
-    // Chỉ lấy các điểm chức năng đỗ xe hoặc ghim giao hàng của bàn
-    if (obj.type === 'robotStart' || obj.type === 'kitchen' || obj.type === 'charging') {
-      if (obj.type === 'robotStart' && robotStartExported) return;
-      const cx = obj.x + obj.width / 2;
-      const cy = obj.y + obj.height / 2;
-      const world = pixelToWorld(cx, cy, floorSize, resolution);
-      const name = `${obj.type.charAt(0).toUpperCase() + obj.type.slice(1)}_${obj.id.replace(/\s+/g, '_')}`;
-      lines.push(`${name}: ${world.x.toFixed(2)} ${world.y.toFixed(2)}`);
-      if (obj.type === 'robotStart') robotStartExported = true;
-    } 
-    else if (obj.type === 'table') {
-      let cx = obj.x + obj.width / 2;
-      let cy = obj.y + obj.height / 2;
-      const angleRad = ((obj.rotation || 0) * Math.PI) / 180;
-      const offX = obj.deliveryOffsetX || 0;
-      const offY = obj.deliveryOffsetY || 0;
-      const rotatedOffX = offX * Math.cos(angleRad) - offY * Math.sin(angleRad);
-      const rotatedOffY = offX * Math.sin(angleRad) + offY * Math.cos(angleRad);
-      cx += rotatedOffX;
-      cy += rotatedOffY;
-
-      const world = pixelToWorld(cx, cy, floorSize, resolution);
-      const name = (obj.name || `Table_${obj.id}`).replace(/\s+/g, '_');
-      lines.push(`${name}: ${world.x.toFixed(2)} ${world.y.toFixed(2)}`);
+  nodes.forEach((node) => {
+    if (node.type === 'robotStart') {
+      if (robotStartExported) return;
+      const name = `RobotStart_${node.id.replace(/\s+/g, '_')}`;
+      lines.push(`${name}: ${node.x.toFixed(2)} ${node.y.toFixed(2)}`);
+      robotStartExported = true;
+    } else if (node.type === 'delivery') {
+      const name = (node.name || `Delivery_${node.id}`).replace(/\s+/g, '_');
+      lines.push(`${name}: ${node.x.toFixed(2)} ${node.y.toFixed(2)}`);
+    } else if (node.type === 'kitchen' || node.type === 'charging') {
+      const name = (node.name || `${node.type.charAt(0).toUpperCase() + node.type.slice(1)}_${node.id}`).replace(/\s+/g, '_');
+      lines.push(`${name}: ${node.x.toFixed(2)} ${node.y.toFixed(2)}`);
     }
   });
 

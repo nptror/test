@@ -1,25 +1,21 @@
 // src/types/map.ts
 export type MapObjectType =
+  | 'wall'
   | 'table'
   | 'chair'
-  | 'wall'
-  | 'kitchen'
-  | 'delivery'
-  | 'charging'
   | 'restricted'
+  | 'delivery'
   | 'robotStart'
-  | 'waypoint';
+  | 'waypoint'
+  | 'kitchen'
+  | 'charging';
 
 // ✅ Thêm export MapTool
 export type MapTool =
   | 'select'
   | 'pan'
-  | 'table'
-  | 'chair'
-  | 'kitchen'
-  | 'charging'
   | 'wall'
-  | 'restricted'
+  | 'table'
   | 'robotStart'
   | 'waypoint'
   | 'edge';

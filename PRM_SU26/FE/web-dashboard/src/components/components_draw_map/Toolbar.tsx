@@ -29,7 +29,7 @@ export const Toolbar = () => {
   };
 
   const handleExportWaypoints = () => {
-    const content = exportWaypoints(objects, floorSize, resolution);
+    const content = exportWaypoints(graphNodes, floorSize, resolution);
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

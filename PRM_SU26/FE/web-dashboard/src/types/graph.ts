@@ -2,9 +2,9 @@ export type GraphNodeType =
   | 'robotStart'
   | 'table'
   | 'delivery'
+  | 'waypoint'
   | 'kitchen'
-  | 'charging'
-  | 'waypoint';
+  | 'charging';
 
 export interface GraphNode {
   id: string;

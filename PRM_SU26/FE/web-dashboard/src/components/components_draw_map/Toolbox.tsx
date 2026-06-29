@@ -1,8 +1,5 @@
 import { Button, Tooltip } from 'antd';
 import {
-  Armchair,
-  BatteryCharging,
-  CircleDot,
   Hand,
   Link2,
   MousePointer2,
@@ -10,7 +7,6 @@ import {
   Navigation,
   Plus,
   Square,
-  Utensils,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { MapTool } from '@/types/map';
@@ -25,12 +21,8 @@ interface ToolDefinition {
 const tools: ToolDefinition[] = [
   { tool: 'select', label: 'Select', Icon: MousePointer2 },
   { tool: 'pan', label: 'Pan', Icon: Hand },
-  { tool: 'table', label: 'Table', Icon: Square },
-  { tool: 'chair', label: 'Chair', Icon: Armchair },
-  { tool: 'kitchen', label: 'Kitchen', Icon: Utensils },
-  { tool: 'charging', label: 'Charging Station', Icon: BatteryCharging },
   { tool: 'wall', label: 'Wall', Icon: Move },
-  { tool: 'restricted', label: 'Restricted Area', Icon: CircleDot },
+  { tool: 'table', label: 'Table', Icon: Square },
   { tool: 'robotStart', label: 'Start Position', Icon: Navigation },
   { tool: 'waypoint', label: 'Waypoint', Icon: Plus },
   { tool: 'edge', label: 'Connect Edge', Icon: Link2 },

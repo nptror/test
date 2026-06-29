@@ -133,19 +133,11 @@ const createRobotStartNodeFromObject = (object: MapObject, floorSize = 20, resol
   };
 };
 
-const syncRobotStartNode = (objects: MapObject[], nodes: GraphNode[], floorSize = 20, resolution = 0.05): GraphNode[] => {
-  const robotStartObject = objects.find((object) => object.type === 'robotStart');
-  if (!robotStartObject) {
-    return nodes.filter((node) => node.type !== 'robotStart');
-  }
-
-  const robotStartNode = createRobotStartNodeFromObject(robotStartObject, floorSize, resolution);
-  const otherNodes = nodes.filter((node) => node.type !== 'robotStart');
-  return enforceSingleRobotStartNodes([robotStartNode, ...otherNodes]);
-};
+// syncRobotStartNode removed – start node is now only a GraphNode and not synced from objects
 
 const syncGraphStateWithObjects = (objects: MapObject[], nodes: GraphNode[], floorSize = 20, resolution = 0.05) =>
-  syncRobotStartNode(objects, nodes, floorSize, resolution);
+  // No synchronization with robotStart objects – start node is managed solely as a GraphNode
+  nodes;
 
 const alignGraphStateWithObjects = (objects: MapObject[], nodes: GraphNode[], floorSize = 20, resolution = 0.05) => {
   const robotSynced = syncGraphStateWithObjects(objects, nodes, floorSize, resolution);
@@ -176,6 +168,7 @@ const alignGraphStateWithObjects = (objects: MapObject[], nodes: GraphNode[], fl
       };
     });
 
+  // New: generate kitchen nodes from kitchen objects
   const kitchenNodes = objects
     .filter((object) => object.type === 'kitchen')
     .map((object) => {
@@ -185,13 +178,14 @@ const alignGraphStateWithObjects = (objects: MapObject[], nodes: GraphNode[], fl
       return {
         id: `kitchen-${object.id}`,
         type: 'kitchen' as const,
-        name: object.name || `Kitchen_${object.id}`,
+        name: object.name || `Kitchen ${object.id}`,
         x: worldPos.x,
         y: worldPos.y,
         theta: 0,
       };
     });
 
+  // New: generate charging stations from charging objects
   const chargingNodes = objects
     .filter((object) => object.type === 'charging')
     .map((object) => {
@@ -201,29 +195,39 @@ const alignGraphStateWithObjects = (objects: MapObject[], nodes: GraphNode[], fl
       return {
         id: `charging-${object.id}`,
         type: 'charging' as const,
-        name: object.name || `Charging_${object.id}`,
+        name: object.name || `Charging ${object.id}`,
         x: worldPos.x,
         y: worldPos.y,
         theta: 0,
       };
     });
 
+  // preserved includes: robotStart (synced), waypoints (standalone GraphNodes)
+  // Exclude only object-backed node types that get rebuilt from MapObjects each time
   const preserved = robotSynced.filter(
     (node) =>
       node.type !== 'delivery' &&
       node.type !== 'table' &&
       node.type !== 'kitchen' &&
       node.type !== 'charging'
+    // 'waypoint' and 'robotStart' are preserved as-is
   );
   const merged = [...preserved, ...deliveryNodes, ...kitchenNodes, ...chargingNodes];
   return enforceSingleRobotStartNodes(merged);
 };
 
+/**
+ * Remove any legacy waypoint MapObjects that were mistakenly stored before the fix.
+ * Waypoints are now exclusively GraphNodes; they should never appear as MapObjects.
+ */
+const removeLegacyWaypointObjects = (objects: MapObject[]): MapObject[] =>
+  objects.filter((obj) => obj.type !== 'waypoint');
+
 const storedObjects = loadObjectsFromStorage();
 const storedGraph = loadGraphFromStorage();
 const initialLegacyRouteText = loadLegacyRouteText();
 const initialObjects: MapObject[] = storedObjects.length > 0
-  ? enforceSingleRobotStartObjects(storedObjects)
+  ? removeLegacyWaypointObjects(enforceSingleRobotStartObjects(storedObjects))
   : [];
 const initialGraphMigration = migrateLegacyMapToGraph(
   initialObjects,
