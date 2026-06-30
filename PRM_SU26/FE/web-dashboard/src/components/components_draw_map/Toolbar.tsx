@@ -93,11 +93,18 @@ export const Toolbar = () => {
   };
 
   const handleSendToRobot = async () => {
+    // Determine robot start position – prefer a GraphNode `robotStart` if present,
+    // otherwise fall back to a MapObject of type `robotStart` (legacy).
+    const startNode = graphNodes.find((n) => n.type === 'robotStart');
     const startObj = objects.find((obj) => obj.type === 'robotStart');
     let robot_start_world_x = 0;
     let robot_start_world_y = 0;
 
-    if (startObj) {
+    if (startNode) {
+      // GraphNode already stores world coordinates directly.
+      robot_start_world_x = startNode.x;
+      robot_start_world_y = startNode.y;
+    } else if (startObj) {
       const startPx = startObj.x + startObj.width / 2;
       const startPy = startObj.y + startObj.height / 2;
       const worldPos = pixelToWorld(startPx, startPy, floorSize, resolution);
@@ -105,7 +112,7 @@ export const Toolbar = () => {
       robot_start_world_y = worldPos.y;
     }
 
-    const waypointsText = exportWaypoints(objects, floorSize, resolution);
+    const waypointsText = exportWaypoints(graphNodes, floorSize, resolution);
     const graphText = exportGraph(graphNodes, graphEdges, floorSize, resolution);
     const payload = {
       floorSize,
@@ -128,16 +135,21 @@ export const Toolbar = () => {
       graph_text: payload.graph
     });
     try {
-      const response = await fetch('http://localhost:3001/api/upload', {
+      const response = await fetch('http://localhost:3001/api/maps', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const result = await response.json();
-      if (result.success) {
+      let result;
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Server responded ${response.status}: ${text}`);
+      }
+      result = await response.json();
+      if (result.id) {
         alert('✅ Dữ liệu đã gửi thành công!');
       } else {
-        alert('❌ Lỗi: ' + result.error);
+        alert('❌ Lỗi: ' + (result.error || 'Unknown error'));
       }
     } catch (error) {
       console.error(error);

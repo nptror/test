@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "version": 2,
+    "floorSize": 20,
+    "resolution": 0.05
+  },
+  "nodes": [
+    {
+      "id": "robotStart-3",
+      "type": "robotStart",
+      "name": "Start",
+      "x": -0.07775566188198724,
+      "y": -0.33352935481459983,
+      "theta": 0
+    },
+    {
+      "id": "waypoint-4",
+      "type": "waypoint",
+      "name": "WP 4",
+      "x": -0.03974396597555625,
+      "y": 2.9486343878754586,
+      "theta": 0
+    },
+    {
+      "id": "waypoint-5",
+      "type": "waypoint",
+      "name": "WP 5",
+      "x": -0.09529952153111054,
+      "y": 6.504189943431015,
+      "theta": 0
+    },
+    {
+      "id": "delivery-table-101",
+      "type": "delivery",
+      "name": "Table 101_Delivery",
+      "x": -3.5388888888888888,
+      "y": 6.58888888888889,
+      "theta": 0,
+      "tableNumber": 101,
+      "deliveryOffsetX": 37.22222222222223,
+      "deliveryOffsetY": 17.222222222222197
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-2",
+      "from": "robotStart-3",
+      "to": "waypoint-4",
+      "bidirectional": true,
+      "weight": 3.20537193160652
+    },
+    {
+      "id": "edge-3",
+      "from": "waypoint-4",
+      "to": "waypoint-5",
+      "bidirectional": true,
+      "weight": 3.6456679856685263
+    },
+    {
+      "id": "edge-4",
+      "from": "waypoint-5",
+      "to": "delivery-table-101",
+      "bidirectional": true,
+      "weight": 3.4446308426798393
+    }
+  ]
+}

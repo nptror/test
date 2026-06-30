@@ -21,6 +21,9 @@ interface StoredGraph {
 }
 
 interface MapState {
+  // Persisted identifier of the currently‑selected map (if any)
+  selectedMapId: string | null;
+  setSelectedMapId: (id: string | null) => void;
   selectedTool: MapTool;
   selectedObjectId: string | null;
   selectedGraphNodeId: string | null;
@@ -77,6 +80,16 @@ const loadGraphFromStorage = (): StoredGraph => {
     console.warn('Failed to load graph from localStorage', e);
   }
   return { nodes: [], edges: [] };
+};
+
+const loadSelectedMapId = (): string | null => {
+  try {
+    const id = localStorage.getItem('selected_map_id');
+    return id ? id : null;
+  } catch (e) {
+    console.warn('Failed to load selected map id', e);
+    return null;
+  }
 };
 
 const loadLegacyRouteText = (): string => {
@@ -246,6 +259,21 @@ if (initialGraphMigration.migrated || initialGraph.nodes.length !== initialGraph
 }
 
 export const useMapStore = create<MapState>((set, get) => ({
+  // Selected map identifier (persisted)
+  selectedMapId: loadSelectedMapId(),
+  setSelectedMapId: (id: string | null) => {
+    // Persist to localStorage under a dedicated key
+    try {
+      if (id === null) {
+        localStorage.removeItem('selected_map_id');
+      } else {
+        localStorage.setItem('selected_map_id', id);
+      }
+    } catch (e) {
+      console.warn('Failed to persist selected map id', e);
+    }
+    set({ selectedMapId: id });
+  },
   selectedTool: 'select',
   selectedObjectId: 'table-4',
   selectedGraphNodeId: null,

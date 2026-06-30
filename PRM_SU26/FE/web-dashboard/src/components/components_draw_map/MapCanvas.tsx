@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Tag, Typography } from 'antd';
+import { Tag, Typography, message } from 'antd';
 import {
   Star,
   MapPin,
@@ -420,6 +420,8 @@ export function MapCanvas() {
   const updateObject = useMapStore((s) => s.updateObject);
   const removeObject = useMapStore((s) => s.removeObject);
   const addGraphNode = useMapStore((s) => s.addGraphNode);
+  const selectedMapId = useMapStore((s) => s.selectedMapId);
+  const setSelectedMapId = useMapStore((s) => s.setSelectedMapId);
   const updateGraphNode = useMapStore((s) => s.updateGraphNode);
   const addGraphEdge = useMapStore((s) => s.addGraphEdge);
   const removeGraphNode = useMapStore((s) => s.removeGraphNode);
@@ -447,6 +449,9 @@ export function MapCanvas() {
 
   // Poll robot position + path
   useEffect(() => {
+    // ---------------------------------------------------------------
+    // Poll robot live status + path (unchanged)
+    // ---------------------------------------------------------------
     const fetchRobotStatus = async () => {
       try {
         const res = await fetch('http://localhost:3001/api/robot/status');
@@ -473,8 +478,92 @@ export function MapCanvas() {
     fetchRobotPath();
     const statusInterval = setInterval(fetchRobotStatus, 150);
     const pathInterval = setInterval(fetchRobotPath, 500);
+
+    // ---------------------------------------------------------------
+    // Ensure a robotStart graph node exists when map meta provides one.
+    // This runs once per component mount and adds the node only if missing.
+    // ---------------------------------------------------------------
+    const ensureRobotStartNode = async () => {
+      // If a robotStart node already exists, nothing to do.
+      if (graphNodes.some((n) => n.type === 'robotStart')) return;
+
+      let nodeCreated = false;
+
+      // ① Try persisted selectedMapId first.
+      if (selectedMapId) {
+        try {
+          const metaRes = await fetch(`http://localhost:3001/api/maps/${selectedMapId}`);
+          const meta = await metaRes.json();
+          if (meta && typeof meta.robotStart?.x === 'number' && typeof meta.robotStart?.y === 'number') {
+            addGraphNode({
+              id: `robotStart-${Date.now()}`,
+              type: 'robotStart',
+              name: 'Start',
+              x: meta.robotStart.x,
+              y: meta.robotStart.y,
+              theta: 0,
+            });
+            message.success('✅ Auto‑created robot start node from persisted map meta');
+            nodeCreated = true;
+          }
+        } catch (e) {
+          console.warn('Failed to load robotStart from persisted map id', e);
+        }
+      }
+
+      // ② Fallback: fetch the list of maps, pick the first one and persist its ID.
+      if (!nodeCreated) {
+        try {
+          const listRes = await fetch('http://localhost:3001/api/maps');
+          const list = await listRes.json();
+          if (!Array.isArray(list) || list.length === 0) return;
+          const mapId = list[0].id;
+          // Persist the chosen map ID for future mounts.
+          setSelectedMapId(mapId);
+          const metaRes = await fetch(`http://localhost:3001/api/maps/${mapId}`);
+          const meta = await metaRes.json();
+          if (meta && typeof meta.robotStart?.x === 'number' && typeof meta.robotStart?.y === 'number') {
+            addGraphNode({
+              id: `robotStart-${Date.now()}`,
+              type: 'robotStart',
+              name: 'Start',
+              x: meta.robotStart.x,
+              y: meta.robotStart.y,
+              theta: 0,
+            });
+            message.success('✅ Auto‑created robot start node from map meta');
+            nodeCreated = true;
+          }
+        } catch (e) {
+          console.warn('Failed to load robotStart from map meta', e);
+        }
+      }
+
+      // ③ Final fallback: use live robot position if meta is missing.
+      if (!nodeCreated) {
+        try {
+          const statusRes = await fetch('http://localhost:3001/api/robot/status');
+          const status = await statusRes.json();
+          if (status && status.status !== 'OFFLINE' && typeof status.x === 'number' && typeof status.y === 'number') {
+            addGraphNode({
+              id: `robotStart-${Date.now()}`,
+              type: 'robotStart',
+              name: 'Start',
+              x: status.x,
+              y: status.y,
+              theta: 0,
+            });
+            message.info('ℹ️ Created start node from live robot position (meta missing)');
+          }
+        } catch (e) {
+          console.warn('Failed to fallback to robot status for start node', e);
+        }
+      }
+    };
+    ensureRobotStartNode();
+
     return () => { clearInterval(statusInterval); clearInterval(pathInterval); };
-  }, []);
+  }, [graphNodes, addGraphNode, selectedMapId]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });

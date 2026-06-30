@@ -13,6 +13,16 @@
 #include <float.h>
 #include <string.h>
 
+enum RobotState {
+    STATE_IDLE,
+    STATE_NAV_TO_TABLE,
+    STATE_MANUAL_MOVE,
+    STATE_RETURN_TO_KITCHEN
+};
+
+// Forward declaration for resolve_graph_target used in read_robot_command
+static bool resolve_graph_target(const char *target, double *x, double *y, enum RobotState *state);
+
 #define TIME_STEP 64
 
 // Robot parameters
@@ -89,12 +99,6 @@ typedef struct {
     bool valid;
 } GraphEdgeC;
 
-enum RobotState {
-    STATE_IDLE,
-    STATE_NAV_TO_TABLE,
-    STATE_MANUAL_MOVE,
-    STATE_RETURN_TO_KITCHEN
-};
 enum RobotState robot_state = STATE_IDLE;
 
 const char *get_state_string(enum RobotState state) {
@@ -320,15 +324,30 @@ void load_meta(double *start_x, double *start_y) {
     buf[n] = '\0';
     fclose(fp);
 
-    char *px = strstr(buf, "\"robot_start_x\"");
+    char *px = strstr(buf, "\"robotStart\"");
     if (px) {
-        px = strchr(px, ':');
-        if (px) sscanf(px + 1, "%lf", start_x);
-    }
-    char *py = strstr(buf, "\"robot_start_y\"");
-    if (py) {
-        py = strchr(py, ':');
-        if (py) sscanf(py + 1, "%lf", start_y);
+        char *xx = strstr(px, "\"x\"");
+        if (xx) {
+            xx = strchr(xx, ':');
+            if (xx) sscanf(xx + 1, "%lf", start_x);
+        }
+        char *yy = strstr(px, "\"y\"");
+        if (yy) {
+            yy = strchr(yy, ':');
+            if (yy) sscanf(yy + 1, "%lf", start_y);
+        }
+    } else {
+        // Fallback for old format
+        px = strstr(buf, "\"robot_start_x\"");
+        if (px) {
+            px = strchr(px, ':');
+            if (px) sscanf(px + 1, "%lf", start_x);
+        }
+        char *py = strstr(buf, "\"robot_start_y\"");
+        if (py) {
+            py = strchr(py, ':');
+            if (py) sscanf(py + 1, "%lf", start_y);
+        }
     }
     printf("Loaded robot start position from meta: (%.2f, %.2f)\n", *start_x, *start_y);
 }
@@ -516,9 +535,9 @@ static bool parse_graph_json(const char *path) {
                 const char *theta_pos = strstr(obj_start, "\"theta\"");
                 if (theta_pos) sscanf(theta_pos, "\"theta\"%*[^0-9.-]%lf", &theta);
 
-                strncpy(graph_nodes[num_graph_nodes].id, id, sizeof(graph_nodes[num_graph_nodes].id) - 1);
-                strncpy(graph_nodes[num_graph_nodes].name, name, sizeof(graph_nodes[num_graph_nodes].name) - 1);
-                strncpy(graph_nodes[num_graph_nodes].type, type, sizeof(graph_nodes[num_graph_nodes].type) - 1);
+                snprintf(graph_nodes[num_graph_nodes].id, sizeof(graph_nodes[num_graph_nodes].id), "%s", id);
+                snprintf(graph_nodes[num_graph_nodes].name, sizeof(graph_nodes[num_graph_nodes].name), "%s", name);
+                snprintf(graph_nodes[num_graph_nodes].type, sizeof(graph_nodes[num_graph_nodes].type), "%s", type);
                 graph_nodes[num_graph_nodes].x = x;
                 graph_nodes[num_graph_nodes].y = y;
                 graph_nodes[num_graph_nodes].theta = theta;
@@ -584,9 +603,9 @@ static bool parse_graph_json(const char *path) {
                     }
                 }
 
-                strncpy(graph_edges[num_graph_edges].id, id, sizeof(graph_edges[num_graph_edges].id) - 1);
-                strncpy(graph_edges[num_graph_edges].from, from, sizeof(graph_edges[num_graph_edges].from) - 1);
-                strncpy(graph_edges[num_graph_edges].to, to, sizeof(graph_edges[num_graph_edges].to) - 1);
+                snprintf(graph_edges[num_graph_edges].id, sizeof(graph_edges[num_graph_edges].id), "%s", id);
+                snprintf(graph_edges[num_graph_edges].from, sizeof(graph_edges[num_graph_edges].from), "%s", from);
+                snprintf(graph_edges[num_graph_edges].to, sizeof(graph_edges[num_graph_edges].to), "%s", to);
                 graph_edges[num_graph_edges].bidirectional = bidirectional;
                 graph_edges[num_graph_edges].weight = weight;
                 graph_edges[num_graph_edges].valid = true;
@@ -624,6 +643,7 @@ static int find_nearest_graph_node(double x, double y) {
     return best_idx;
 }
 
+/* 
 static int find_graph_edge_index_by_nodes(int from_idx, int to_idx) {
     if (from_idx < 0 || to_idx < 0) return -1;
     const char *from_id = graph_nodes[from_idx].id;
@@ -637,6 +657,7 @@ static int find_graph_edge_index_by_nodes(int from_idx, int to_idx) {
     }
     return -1;
 }
+*/
 
 static void build_graph_route_from_indices(int start_idx, int goal_idx) {
     graph_route_len = 0;
@@ -1178,6 +1199,13 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
     double min_v = fmax(0.0, current_v - MAX_ACCEL * TIME_STEP / 1000.0);
     double max_v = fmin(MAX_SPEED, current_v + MAX_ACCEL * TIME_STEP / 1000.0);
 
+    double dx = goal_x - robot_x;
+    double dy = goal_y - robot_y;
+    double target_th = atan2(dy, dx);
+    double h_err = target_th - robot_theta;
+    while (h_err > M_PI) h_err -= 2 * M_PI;
+    while (h_err < -M_PI) h_err += 2 * M_PI;
+
     // Allow v=0 when heading error is moderate (>60°) so DWA can choose tight arcs
     if (fabs(h_err) > M_PI / 3.0) {
         min_v = 0.0;
@@ -1194,7 +1222,6 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
     double best_v = 0.0, best_omega = 0.0;
     int valid_samples = 0;
     int collision_samples = 0;
-    int clearance_samples = 0;
     int fallback_reason_logged = 0;
 
     for (int i = 0; i <= V_SAMPLES; i++) {
@@ -1252,8 +1279,8 @@ void dwa_control(double robot_x, double robot_y, double robot_theta,
 
     // Post-filter: clamp omega change to OMEGA_SMOOTH_MAX per step
     double omega_delta = best_omega - current_omega;
-    if (omega_delta > smooth_limit) omega_delta = smooth_limit;
-    if (omega_delta < -smooth_limit) omega_delta = -smooth_limit;
+    if (omega_delta > OMEGA_SMOOTH_MAX) omega_delta = OMEGA_SMOOTH_MAX;
+    if (omega_delta < -OMEGA_SMOOTH_MAX) omega_delta = -OMEGA_SMOOTH_MAX;
     best_omega = current_omega + omega_delta;
 
     if ((dwa_debug_tick++ % 10) == 0) {
@@ -1277,12 +1304,34 @@ void compute_wheel_speeds(double v, double omega, double *vl, double *vr) {
     *vr = (v + (omega * WHEEL_BASE / 2.0)) / WHEEL_RADIUS;
 }
 
+void load_wp(Waypoint *wps, int *num) {
+    FILE *fp = fopen("waypoints.txt", "r");
+    if (!fp) return;
+    char line[128];
+    *num = 0;
+    while (fgets(line, sizeof(line), fp)) {
+        if (*num >= MAX_WAYPOINTS) break;
+        char name[64];
+        double x, y;
+        if (sscanf(line, "%[^:]: %lf %lf", name, &x, &y) == 3) {
+            snprintf(wps[*num].name, sizeof(wps[*num].name), "%s", name);
+            wps[*num].x = x;
+            wps[*num].y = y;
+            wps[*num].valid = true;
+            (*num)++;
+        }
+    }
+    fclose(fp);
+}
+
 // ------------------------------------------------------------
 int main(int argc, char **argv) {
     wb_robot_init();
-    if (!load_map("map_nhahang.pgm")) {
-        printf("Failed to load map.\n");
-        return -1;
+    if (!load_map("map.pgm")) {
+        if (!load_map("map_nhahang.pgm")) {
+            printf("Failed to load map.\n");
+            return -1;
+        }
     }
     init_dynamic_map();
     compute_distance_transform();

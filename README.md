@@ -57,6 +57,53 @@ This repository contains a **Map Server** (Node.js/Express) and a **Robot Contro
    ```
    The script will connect to the Map Server WebSocket, listen for `mapUpdated` messages, and process the associated files.
 
+### Test the API with a simple script
+A helper script `test_requests.sh` is included to exercise the CRUD endpoints via `curl`. Make it executable and run:
+```bash
+chmod +x test_requests.sh
+./test_requests.sh
+```
+It will:
+- POST a new map.
+- List all maps.
+- GET the newly created map.
+- PUT (update) the map.
+- DELETE the map.
+
+
+### Map Server (Node.js)
+1. Ensure you have **Node.js 18+** installed.
+2. Install dependencies:
+   ```bash
+   cd server
+   npm install
+   ```
+3. Start the server (default port **3001**):
+   ```bash
+   npm start
+   ```
+   The server will expose:
+   - `POST   /api/maps` – upload a new map (Full CRUD upload).
+   - `GET    /api/maps` – list all map metadata.
+   - `GET    /api/maps/:id` – retrieve a single map's meta.
+   - `PUT    /api/maps/:id` – replace an existing map.
+   - `DELETE /api/maps/:id` – delete a map.
+   - `GET    /api/maps/:id/files/<file>` – download stored files (e.g., `map.yaml`).
+   - WebSocket endpoint at `ws://localhost:3001/ws` emitting `{type:"mapUpdated", mapId:"<id>"}`.
+
+### Robot Controller (Python)
+1. Install Python 3.10+.
+2. Install required packages:
+   ```bash
+   pip install websocket-client
+   ```
+   *(Only `websocket-client` is required for the demo; you can add `watchdog` for advanced FS watching.)*
+3. Run the controller:
+   ```bash
+   python robot_controller/controller.py
+   ```
+   The script will connect to the Map Server WebSocket, listen for `mapUpdated` messages, and process the associated files.
+
 ## API Payload Example (POST /api/maps)
 ```json
 {

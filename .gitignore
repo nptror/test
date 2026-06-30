@@ -1,0 +1,7 @@
+# Node.js dependencies
+node_modules/
+# Server runtime data (maps generated at runtime)
+server/data/
+# OS files
+.DS_Store
+Thumbs.db
